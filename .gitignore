@@ -5,8 +5,9 @@ __pycache__/
 .ruff_cache/
 dist/
 build/
+site/
 *.egg-info/
 # Nunca subir configuración personal
 orgs.toml
-!src/awsorg/data/orgs.example.toml
+!src/rolehop/data/orgs.example.toml
 *.bak-*

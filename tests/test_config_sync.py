@@ -50,7 +50,7 @@ def test_symlink_se_respeta(sample):
     p.aws.symlink_to(real)
     assert sync(cli) == 0
     assert p.aws.is_symlink()
-    assert "awsorg:empresa" in real.read_text()
+    assert "rolehop:empresa" in real.read_text()
 
 
 def test_bloque_duplicado_y_marcador_roto(sample):
@@ -59,7 +59,7 @@ def test_bloque_duplicado_y_marcador_roto(sample):
     block = p.aws.read_text()
     p.aws.write_text(block + "\n" + block)
     assert sync(cli) == 2
-    p.aws.write_text(block.replace("# <<< awsorg:empresa <<<", "# roto"))
+    p.aws.write_text(block.replace("# <<< rolehop:empresa <<<", "# roto"))
     assert sync(cli) == 2
     assert "\0" not in p.aws.read_text()
 
@@ -109,9 +109,9 @@ def test_prune(sample):
     assert sync(cli) == 0
     p.orgs.write_text(SAMPLE.replace('name = "empresa"', 'name = "otra"').replace("empresa.awsapps", "otra.awsapps"))
     assert sync(cli) == 0
-    assert "awsorg:empresa" in p.aws.read_text()
+    assert "rolehop:empresa" in p.aws.read_text()
     assert sync(cli, "--prune") == 0
-    assert "awsorg:empresa" not in p.aws.read_text()
+    assert "rolehop:empresa" not in p.aws.read_text()
 
 
 def test_probe_respeta_default_role(sample):

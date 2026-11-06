@@ -1,4 +1,4 @@
-"""Aísla cada test: HOME, config de awsorg, ~/.aws/config y estado en un directorio temporal."""
+"""Aísla cada test: HOME, config de rolehop, ~/.aws/config y estado en un directorio temporal."""
 
 from __future__ import annotations
 
@@ -33,23 +33,23 @@ SAMPLE = textwrap.dedent("""
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """Recarga awsorg.cli con rutas temporales y devuelve (cli, rutas)."""
+    """Recarga rolehop.cli con rutas temporales y devuelve (cli, rutas)."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("AWSORG_CONFIG", str(tmp_path / "orgs.toml"))
+    monkeypatch.setenv("ROLEHOP_CONFIG", str(tmp_path / "orgs.toml"))
     monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "aws-config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AWSORG_SSO_CACHE", str(tmp_path / "sso-cache"))
+    monkeypatch.setenv("ROLEHOP_SSO_CACHE", str(tmp_path / "sso-cache"))
     monkeypatch.delenv("AWS_PROFILE", raising=False)
     monkeypatch.delenv("HERDR_PANE_ID", raising=False)
-    import awsorg.cli as cli
+    import rolehop.cli as cli
     cli = importlib.reload(cli)
     paths = type("P", (), {
         "home": home,
         "orgs": tmp_path / "orgs.toml",
         "aws": tmp_path / "aws-config",
-        "state": tmp_path / "state" / "awsorg",
+        "state": tmp_path / "state" / "rolehop",
         "cache": tmp_path / "sso-cache",
         "tmp": tmp_path,
     })

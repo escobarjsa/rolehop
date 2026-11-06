@@ -1,4 +1,4 @@
-"""`awsorg agent`: instala las instrucciones (y hooks, donde el agente los soporta) en agentes de IA de código.
+"""`rolehop agent`: instala las instrucciones (y hooks, donde el agente los soporta) en agentes de IA de código.
 
 Cada agente tiene:
   - instrucciones globales: un archivo propio en un directorio de reglas, o un bloque con marcadores
@@ -17,13 +17,16 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
-MD_BEGIN = "<!-- >>> awsorg (gestionado por awsorg, no editar) >>> -->"
-MD_END = "<!-- <<< awsorg <<< -->"
-LEGACY_HOOK_MARKERS = ("awsorg/hooks/aws-expired.sh", "awsorg/hooks/aws-cwd-direnv.sh")
+MD_BEGIN = "<!-- >>> rolehop (gestionado por rolehop, no editar) >>> -->"
+MD_END = "<!-- <<< rolehop <<< -->"
+LEGACY_HOOK_MARKERS = ("awsorg/hooks/aws-expired.sh", "awsorg/hooks/aws-cwd-direnv.sh")  # scripts del kit
+# Nombre anterior de la herramienta (awsorg, hasta 1.2.0): se reconoce y se reemplaza al instalar.
+LEGACY_MD = ("<!-- >>> awsorg (gestionado por awsorg, no editar) >>> -->", "<!-- <<< awsorg <<< -->")
+LEGACY_DENY = ["Bash(awsorg login *)", "Bash(awsorg run --login *)"]
 CLAUDE_DENY = [
     "Read(~/.aws/**)", "Edit(~/.aws/**)",
     "Bash(aws configure export-credentials *)", "Bash(aws configure get *)", "Bash(aws sso get-role-credentials *)",
-    "Bash(aws sso login *)", "Bash(awslogin *)", "Bash(awsorg login *)", "Bash(awsorg run --login *)",
+    "Bash(aws sso login *)", "Bash(awslogin *)", "Bash(rolehop login *)", "Bash(rolehop run --login *)",
     "Bash(claude-aws-run --login *)", "Bash(assume *)", "Bash(granted *)", "Bash(direnv allow *)",
 ]
 
@@ -63,25 +66,25 @@ AGENTS: dict[str, Agent] = {a.key: a for a in [
     Agent("devin", "Devin Desktop / Windsurf", ("devin", "windsurf"), (".devin", ".codeium/windsurf"),
           ".devin/global_rules.md"),
     Agent("cursor", "Cursor", ("cursor-agent", "cursor"), (".cursor",), None, "ui",
-          notes=["Cursor no tiene un archivo de reglas global: pega `awsorg agent rules` en Settings → Rules. "
+          notes=["Cursor no tiene un archivo de reglas global: pega `rolehop agent rules` en Settings → Rules. "
                  "Cursor también ejecuta los hooks de Claude Code si los tienes instalados."]),
 ]}
 
 
 def rules_text() -> str:
-    return resources.files("awsorg").joinpath("data/agent-rules.md").read_text(encoding="utf-8")
+    return resources.files("rolehop").joinpath("data/agent-rules.md").read_text(encoding="utf-8")
 
 
-def awsorg_command() -> str:
-    """Ruta absoluta del ejecutable awsorg (los hooks no siempre heredan el PATH)."""
-    found = shutil.which("awsorg")  # ruta estable del PATH (p. ej. ~/.local/bin/awsorg), sobrevive a reinstalaciones
+def rolehop_command() -> str:
+    """Ruta absoluta del ejecutable rolehop (los hooks no siempre heredan el PATH)."""
+    found = shutil.which("rolehop")  # ruta estable del PATH (p. ej. ~/.local/bin/rolehop), sobrevive a reinstalaciones
     if found:
         return str(Path(found).absolute())
     argv0 = Path(sys.argv[0])
-    if argv0.name == "awsorg" and argv0.exists():
+    if argv0.name == "rolehop" and argv0.exists():
         return str(argv0.absolute())
-    local = Path.home() / ".local/bin/awsorg"
-    return str(local) if local.exists() else "awsorg"
+    local = Path.home() / ".local/bin/rolehop"
+    return str(local) if local.exists() else "rolehop"
 
 
 # --------------------------------------------------------------------------- utilidades de archivo
@@ -120,8 +123,11 @@ class Changes:
 def _with_block(current: str, body: str) -> str:
     block = f"{MD_BEGIN}\n{body.rstrip()}\n{MD_END}\n"
     if MD_BEGIN in current and MD_END in current:
-        start = current.index(MD_BEGIN)
-        end = current.index(MD_END) + len(MD_END)
+        current = _drop(current, *LEGACY_MD)  # si también quedó el bloque antiguo, fuera
+    begin, end_mark = (MD_BEGIN, MD_END) if MD_BEGIN in current else LEGACY_MD
+    if begin in current and end_mark in current:
+        start = current.index(begin)
+        end = current.index(end_mark) + len(end_mark)
         if current[end:end + 1] == "\n":
             end += 1
         return current[:start] + block + current[end:]
@@ -129,12 +135,18 @@ def _with_block(current: str, body: str) -> str:
     return current + sep + block
 
 
-def _without_block(current: str) -> str:
-    if MD_BEGIN not in current or MD_END not in current:
+def _drop(current: str, begin: str, end_mark: str) -> str:
+    if begin not in current or end_mark not in current:
         return current
-    start = current.index(MD_BEGIN)
-    end = current.index(MD_END) + len(MD_END)
-    out = current[:start].rstrip("\n") + "\n" + current[end:].lstrip("\n")
+    start = current.index(begin)
+    end = current.index(end_mark) + len(end_mark)
+    return current[:start].rstrip("\n") + "\n" + current[end:].lstrip("\n")
+
+
+def _without_block(current: str) -> str:
+    out = _drop(_drop(current, MD_BEGIN, MD_END), *LEGACY_MD)
+    if out == current:
+        return current
     return out if out.strip() else ""
 
 
@@ -152,11 +164,11 @@ def _read_json(path: Path) -> dict:
 
 # --------------------------------------------------------------------------- hooks por agente
 def _hook_cmd(fmt: str) -> str:
-    return f"{awsorg_command()} hook post-tool --format {fmt}"
+    return f"{rolehop_command()} hook post-tool --format {fmt}"
 
 
 def _is_ours(cmd: str) -> bool:
-    return ("awsorg" in cmd and " hook " in cmd) or any(m in cmd for m in LEGACY_HOOK_MARKERS)
+    return (("rolehop" in cmd or "awsorg" in cmd) and " hook " in cmd) or any(m in cmd for m in LEGACY_HOOK_MARKERS)
 
 
 def _merge_nested_hooks(data: dict, event: str, matcher: str | None, command: str, timeout: int = 15) -> dict:
@@ -199,7 +211,7 @@ def _hooks_target(agent: Agent, home: Path) -> Path:
         "codex": home / ".codex/hooks.json",
         "gemini": home / ".gemini/settings.json",
         "qwen": home / ".qwen/settings.json",
-        "copilot": home / ".copilot/hooks/awsorg.json",
+        "copilot": home / ".copilot/hooks/rolehop.json",
     }[agent.hooks]
 
 
@@ -212,6 +224,7 @@ def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
             "PostToolUseFailure": [{"type": "command", "bash": _hook_cmd("copilot"), "timeoutSec": 15}],
         }}
         ch.write(path, json.dumps(data, indent=2) + "\n", f"{agent.name} hooks")
+        ch.remove(path.with_name("awsorg.json"), f"{agent.name} hooks antiguos (awsorg)")
         return
     try:
         data = _read_json(path)
@@ -221,7 +234,7 @@ def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     if fmt == "claude":
         _merge_nested_hooks(data, "PostToolUse", "Bash", _hook_cmd("claude"))
         _merge_nested_hooks(data, "PostToolUseFailure", "Bash", _hook_cmd("claude"))
-        _merge_nested_hooks(data, "CwdChanged", None, f"{awsorg_command()} hook cwd")
+        _merge_nested_hooks(data, "CwdChanged", None, f"{rolehop_command()} hook cwd")
         perms = data.setdefault("permissions", {})
         deny = perms.setdefault("deny", [])
         for rule in CLAUDE_DENY:
@@ -241,6 +254,7 @@ def uninstall_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     path = _hooks_target(agent, home)
     if agent.hooks == "copilot":
         ch.remove(path, f"{agent.name} hooks")
+        ch.remove(path.with_name("awsorg.json"), f"{agent.name} hooks antiguos (awsorg)")
         return
     try:
         data = _read_json(path)
@@ -251,7 +265,7 @@ def uninstall_hooks(agent: Agent, home: Path, ch: Changes) -> None:
         return
     data = _strip_nested_hooks(data)
     if agent.hooks == "claude" and isinstance(data.get("permissions", {}).get("deny"), list):
-        data["permissions"]["deny"] = [r for r in data["permissions"]["deny"] if r not in CLAUDE_DENY]
+        data["permissions"]["deny"] = [r for r in data["permissions"]["deny"] if r not in CLAUDE_DENY + LEGACY_DENY]
     ch.write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", f"{agent.name} hooks")
 
 
@@ -293,7 +307,8 @@ def status(agent: Agent, home: Path) -> dict:
     if agent.rules_path:
         p = home / agent.rules_path
         if p.exists():
-            installed = agent.rules_mode == "file" or MD_BEGIN in p.read_text(encoding="utf-8", errors="replace")
+            text = p.read_text(encoding="utf-8", errors="replace")
+            installed = agent.rules_mode == "file" or MD_BEGIN in text or LEGACY_MD[0] in text
     return {"agent": agent.key, "name": agent.name, "detected": agent.detected(home), "installed": installed,
             "rules": str(home / agent.rules_path) if agent.rules_path else "(UI)", "hooks": agent.hooks or "-"}
 

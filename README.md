@@ -1,80 +1,73 @@
-# awsorg
+# rolehop
 
-**Perfiles AWS IAM Identity Center para varias organizaciones que se renuevan solos, listos para humanos y agentes de IA.**
+[![CI](https://github.com/escobarjsa/rolehop/actions/workflows/ci.yml/badge.svg)](https://github.com/escobarjsa/rolehop/actions/workflows/ci.yml)
+[![Docs](https://github.com/escobarjsa/rolehop/actions/workflows/docs.yml/badge.svg)](https://escobarjsa.github.io/rolehop/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 
-> *English summary:* `awsorg` turns a small TOML file describing your AWS IAM Identity Center organizations, accounts and roles into native `sso-session` profiles in `~/.aws/config` (auto-refreshing, no static keys), gives you a one-command login (`awslogin`), and teaches AI coding agents (Claude Code, Codex, Kiro, Copilot CLI, Gemini, Qwen, OpenCode, Amp, Pi…) how to pick profiles, and what to do when the SSO session expires. Pure Python standard library, no dependencies. CLI messages are in Spanish.
+**Hop between AWS accounts and roles with one login a day — and let your AI coding agent do the same, safely.**
 
----
+`rolehop` turns a small TOML file describing your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles in `~/.aws/config`. It gives you a one-command login (`awslogin`) and teaches AI coding agents — Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code, OpenCode, Amp and more — how to pick profiles, and what to do when the SSO session expires.
 
-## ¿Qué problema resuelve?
+📖 **Documentation: <https://escobarjsa.github.io/rolehop/>**
 
-Copiar las «claves de acceso» del portal de Identity Center te da credenciales **fijas** que mueren con la duración del rol (a menudo 1 hora). Tú y tu agente de IA os quedáis sin acceso a mitad del trabajo.
+## Why
 
-Con `awsorg`:
+Copying the temporary access keys from the IAM Identity Center portal gives you **static** credentials that die with the role duration — often one hour. You and your agent lose access mid-task.
 
-- **Un archivo** (`~/.config/awsorg/orgs.toml`) describe tus organizaciones, cuentas y roles. Hay un asistente que lo crea por ti y descubre las cuentas solo.
-- **Perfiles nativos `sso-session`**: el AWS CLI y los SDK (boto3, Terraform/OpenTofu, Terragrunt…) **renuevan solos** las credenciales de cada rol durante toda la sesión del portal.
-- **Un comando** por jornada: `awslogin`. Funciona con código de dispositivo (ideal en WSL o SSH).
-- **Agentes de IA**: instala instrucciones (y hooks donde se puede) para que el agente elija el perfil adecuado, nunca lea credenciales y se detenga a pedirte `awslogin` cuando la sesión termina.
-
-| Reloj | Duración típica | ¿Quién lo renueva? |
+| Clock | Typical duration | Who renews it |
 |---|---|---|
-| Credenciales del rol (permission set) | 1 h (Admin), 4 h, 8 h… | El AWS CLI y los SDK, solos |
-| Sesión del portal de Identity Center | La configurada (8 h por defecto) | Tú: `awslogin` (una aprobación en el navegador) |
+| Role credentials (permission set) | 1 h (Admin), 4 h, 8 h… | The AWS CLI and SDKs, automatically |
+| Identity Center portal session | As configured (8 h by default) | You: `awslogin` — one browser approval |
 
-## Instalación
+With `rolehop`, one `awslogin` per organization unlocks every account and role in it for the whole portal session.
 
-Requisitos: Python ≥ 3.11 y AWS CLI v2 ≥ 2.22. Linux, WSL o macOS.
+## Features
 
-```bash
-uv tool install awsorg
-awsorg setup
-```
+- **Many organizations** — work, personal, clients: one `[[org]]` block each. Profiles are named `<org>-<account>-<role>`.
+- **Wizard with discovery** — `rolehop init` asks for the portal URL and discovers your accounts and permission sets.
+- **AI agent integration** — rules and hooks so agents choose profiles freely, never read credentials, and stop to ask for `awslogin` on expiry.
+- **Unattended runs** — `rolehop run --login --max 6h` checks the session covers the job before you walk away.
+- **Safe writes** — validated input, managed blocks only, atomic writes, backups, `0600`. Never writes tokens or keys.
+- **Zero dependencies** — Python standard library only.
 
-También con pipx (`pipx install awsorg`). Para la versión de GitHub antes de PyPI:
+## Install
 
-```bash
-uv tool install git+https://github.com/escobarjsa/awsorg
-```
-
-`awsorg setup` hace todo en uno:
-1. **PATH:** añade `~/.local/bin` a tu shell (zsh, bash o fish) y el hook de direnv si lo tienes.
-2. **Organizaciones:** si no existe `orgs.toml`, lanza el asistente. Te pide nombre, URL del portal y región; inicias sesión y descubre tus cuentas y roles.
-3. **Perfiles:** escribe los perfiles en `~/.aws/config`, solo dentro de bloques marcados y con copia de seguridad.
-4. **Agentes de IA:** instala instrucciones y hooks en los agentes que detecta.
-
-Después:
+Requires Python 3.11+ and AWS CLI v2 (2.22+). Linux, WSL or macOS.
 
 ```bash
-awslogin
-awsorg status
+uv tool install rolehop        # or: pipx install rolehop
+rolehop setup
 ```
 
-## Uso diario
+Before the PyPI release, install from GitHub:
 
-| Situación | Comando |
-|---|---|
-| Empezar el día | `awslogin` |
-| Ver perfiles | `awsorg list` |
-| Ver sesiones | `awsorg status` |
-| Usar un perfil | `AWS_PROFILE=empresa-prod-admin aws s3 ls` |
-| Agregar una organización, o actualizar cuentas y roles | `awsorg init` y luego `awsorg sync` |
-| Perfil por defecto en un repo | `awsorg envrc empresa-dev-admin > .envrc && direnv allow` |
-| Antes de dejar trabajando a tu agente | `awsorg run --login --max 6h` |
-| Trabajo sin pantalla | `awsorg run --login --max 6h -- claude -p "tarea"` |
+```bash
+uv tool install git+https://github.com/escobarjsa/rolehop
+```
 
-A tu agente: *«usa los perfiles y roles de AWS que necesites»*. Si la sesión expira, te pedirá `awslogin <org>`.
+`rolehop setup` adds `~/.local/bin` to your `PATH`, runs the wizard if needed, writes your profiles and configures the AI agents it detects.
 
-### Nombres de perfil
+## Usage
 
-`<org>-<cuenta>-<rol>`, por ejemplo `empresa-devsecops-admin` o `personal-main-admin`.
+```bash
+awslogin                                   # start the day
+rolehop status                             # session per organization
+rolehop list                               # profile catalog
+AWS_PROFILE=acme-prod-admin aws s3 ls      # use a profile
+rolehop run --login --max 6h               # before leaving an agent working
+```
 
-## Configuración (`orgs.toml`)
+Then tell your agent: *"use whatever AWS profiles and roles you need."*
+
+## Configuration
+
+`~/.config/rolehop/orgs.toml`:
 
 ```toml
 [[org]]
-name = "empresa"
-start_url = "https://empresa.awsapps.com/start"
+name = "acme"
+start_url = "https://acme.awsapps.com/start"
 sso_region = "us-east-1"
 default_role = "admin"
 
@@ -86,64 +79,38 @@ ro = "ReadOnly"
 name = "devsecops"
 id = "111111111111"
 roles = ["admin", "ro"]
-
-# Rol IAM encadenado (opcional)
-[[org.assume_roles]]
-name = "deploy"
-role_arn = "arn:aws:iam::222222222222:role/Deploy"
-source = "devsecops-admin"
 ```
 
-Plantilla completa: `awsorg` la copia en el asistente. Ver también [`docs/GUIA-RAPIDA.md`](docs/GUIA-RAPIDA.md).
+See the [configuration reference](https://escobarjsa.github.io/rolehop/guide/configuration/).
 
-## Agentes de IA soportados
+## Supported agents
 
-```bash
-awsorg agent list
-awsorg agent install
-awsorg agent install claude codex
-awsorg agent uninstall --all
-awsorg agent rules
-```
-
-- **`list`:** qué agentes detecta y qué hay instalado.
-- **`install`:** instala en los agentes detectados, o en los que nombres.
-- **`uninstall --all`:** lo quita todo.
-- **`rules`:** imprime las instrucciones, por ejemplo para pegarlas en Cursor.
-
-| Agente | Instrucciones globales | Hook «sesión expirada» |
+| Agent | Instructions | Expiry hook |
 |---|---|---|
-| Claude Code | `~/.claude/rules/aws.md` | ✅ PostToolUse / PostToolUseFailure + reglas `deny` |
-| OpenAI Codex CLI | bloque en `~/.codex/AGENTS.md` | ✅ `~/.codex/hooks.json` (apruébalo con `/hooks`) |
-| Kiro (CLI e IDE) | `~/.kiro/steering/aws.md` | — |
-| GitHub Copilot CLI | bloque en `~/.copilot/copilot-instructions.md` | ✅ `~/.copilot/hooks/awsorg.json` |
-| Gemini CLI | bloque en `~/.gemini/GEMINI.md` | ✅ AfterTool |
-| Qwen Code | bloque en `~/.qwen/QWEN.md` | ✅ PostToolUse |
-| OpenCode · Amp · Pi · Devin Desktop (Windsurf) | bloque en su `AGENTS.md` / `global_rules.md` | — |
-| Cursor | sin archivo global: pega `awsorg agent rules` en Settings → Rules | usa los hooks de Claude Code |
+| Claude Code | `~/.claude/rules/aws.md` | ✅ + `deny` rules |
+| OpenAI Codex CLI | `~/.codex/AGENTS.md` | ✅ |
+| Kiro | `~/.kiro/steering/aws.md` | — |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` | ✅ |
+| Gemini CLI | `~/.gemini/GEMINI.md` | ✅ |
+| Qwen Code | `~/.qwen/QWEN.md` | ✅ |
+| OpenCode · Amp · Pi · Devin Desktop | their `AGENTS.md` / `global_rules.md` | — |
+| Cursor | paste `rolehop agent rules` in Settings → Rules | — |
 
-Todo es idempotente, con copia de seguridad, y respeta tu configuración existente: solo añade o reemplaza lo suyo.
+## Migrating from awsorg
 
-## Seguridad
+`rolehop` was named `awsorg` up to 1.2.0. Configuration, state, managed blocks and agent hooks are adopted automatically — see the [migration guide](https://escobarjsa.github.io/rolehop/reference/migrating-from-awsorg/).
 
-- `awsorg` **nunca escribe tokens ni claves**: el login y la renovación los hace el AWS CLI.
-- `init` y `discover` leen el token SSO del caché del CLI **solo en memoria** para listar cuentas en el portal de AWS, y nunca lo imprimen.
-- Todos los valores de `orgs.toml` se validan antes de escribir `~/.aws/config`, sin posibilidad de inyectar líneas. El resultado se comprueba con un parser INI antes de reemplazar el archivo, de forma atómica y con permisos 0600.
-- Las instrucciones para agentes les prohíben leer `~/.aws`, exportar claves o lanzar logins interactivos. En Claude Code eso se refuerza con reglas `deny`.
-- Si el usuario no está cuando termina la sesión del portal, el agente se detiene con AWS (por diseño del SSO). Para trabajo desatendido de infraestructura, usa pipelines con roles propios (OIDC).
+> **Note:** CLI messages are currently in Spanish.
 
-## Limitaciones
-
-- El tiempo restante de la sesión del portal es una **estimación** desde el último `awslogin` (`portal_session_hours`), porque AWS no lo expone.
-- `awsorg status` puede dar ✓ con credenciales de rol en caché, aunque el portal ya haya expirado. El hook corrige el estado en cuanto un comando falla.
-- Solo Linux, WSL y macOS.
-
-## Desarrollo
+## Development
 
 ```bash
 uv run --group dev pytest
 uv run --group dev ruff check src tests
+uv run --group docs zensical serve    # docs at http://localhost:8000
 uv build
 ```
 
-Licencia: [MIT](LICENSE).
+## License
+
+[MIT](LICENSE)

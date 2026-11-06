@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from awsorg import agents
+from rolehop import agents
 
 
 @pytest.fixture
@@ -12,7 +12,7 @@ def home(tmp_path, monkeypatch):
     h = tmp_path / "h"
     h.mkdir()
     monkeypatch.setenv("HOME", str(h))
-    monkeypatch.setattr(agents, "awsorg_command", lambda: "/opt/bin/awsorg")
+    monkeypatch.setattr(agents, "rolehop_command", lambda: "/opt/bin/rolehop")
     monkeypatch.setattr(agents.shutil, "which", lambda name: None)
     return h
 
@@ -37,13 +37,13 @@ def test_claude_regla_hooks_y_deny_conservando_lo_existente(home):
         "permissions": {"deny": ["Bash(rm -rf *)"]},
     }))
     install(home, "claude")
-    assert (home / ".claude/rules/aws.md").read_text().startswith("# AWS con awsorg")
+    assert (home / ".claude/rules/aws.md").read_text().startswith("# AWS con rolehop")
     data = json.loads(settings.read_text())
     cmds = [h["command"] for g in data["hooks"]["PostToolUse"] for h in g["hooks"]]
     assert "echo mio" in cmds
-    assert "/opt/bin/awsorg hook post-tool --format claude" in cmds
+    assert "/opt/bin/rolehop hook post-tool --format claude" in cmds
     assert not any("aws-expired.sh" in c for c in cmds)            # el hook del kit se reemplaza
-    assert data["hooks"]["CwdChanged"][0]["hooks"][0]["command"] == "/opt/bin/awsorg hook cwd"
+    assert data["hooks"]["CwdChanged"][0]["hooks"][0]["command"] == "/opt/bin/rolehop hook cwd"
     assert "Bash(rm -rf *)" in data["permissions"]["deny"] and "Bash(awslogin *)" in data["permissions"]["deny"]
     assert data["model"] == "opus"
     before = settings.read_text()
@@ -57,7 +57,7 @@ def test_bloque_en_archivo_unico_y_desinstalar(home):
     agents_md.write_text("# Mis reglas\n\nUsa español.\n")
     install(home, "codex")
     text = agents_md.read_text()
-    assert text.startswith("# Mis reglas") and agents.MD_BEGIN in text and "awsorg list" in text
+    assert text.startswith("# Mis reglas") and agents.MD_BEGIN in text and "rolehop list" in text
     hooks = json.loads((home / ".codex/hooks.json").read_text())
     assert hooks["hooks"]["PostToolUse"][0]["matcher"] == "Bash"
     install(home, "codex")
@@ -76,7 +76,7 @@ def test_kiro_steering_con_frontmatter(home):
 
 def test_copilot_y_qwen_y_gemini(home):
     install(home, "copilot", "qwen", "gemini")
-    cop = json.loads((home / ".copilot/hooks/awsorg.json").read_text())
+    cop = json.loads((home / ".copilot/hooks/rolehop.json").read_text())
     assert cop["version"] == 1 and "PostToolUse" in cop["hooks"]
     assert "--format copilot" in cop["hooks"]["PostToolUse"][0]["bash"]
     qwen = json.loads((home / ".qwen/settings.json").read_text())
@@ -111,7 +111,7 @@ def test_cursor_solo_nota_y_resolve(home):
 
 
 def test_hook_formatos_por_agente(sample, capsys):
-    from awsorg import hooks
+    from rolehop import hooks
     expired = "Error when retrieving token from sso: Token has expired and refresh failed"
     # Copilot (camelCase, toolArgs como JSON y salida combinada)
     capsys.readouterr()

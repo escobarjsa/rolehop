@@ -1,6 +1,6 @@
-# orgs.toml: organizaciones de AWS IAM Identity Center que gestiona awsorg.
-# Copia este archivo a ~/.config/awsorg/orgs.toml y edítalo. No contiene secretos.
-# Después: `awsorg sync --dry-run` para revisar, `awsorg sync` para aplicar y `awslogin` para entrar.
+# orgs.toml: organizaciones de AWS IAM Identity Center que gestiona rolehop.
+# Copia este archivo a ~/.config/rolehop/orgs.toml y edítalo. No contiene secretos.
+# Después: `rolehop sync --dry-run` para revisar, `rolehop sync` para aplicar y `awslogin` para entrar.
 #
 # Cada [[org]] genera:
 #   [sso-session <name>]                      → un login por org (awslogin <name>)
@@ -16,7 +16,7 @@ sso_region = "us-east-1"                          # región donde está Identity
 region = "us-east-1"                              # región por defecto de los perfiles
 login_flow = "device"                             # "device" (recomendado en WSL) o "pkce"
 portal_session_hours = 8                          # duración de la sesión del portal (solo para estimar)
-default_role = "ro"                               # rol que usa `awsorg status` para probar la sesión
+default_role = "ro"                               # rol que usa `rolehop status` para probar la sesión
 # probe_profile = "empresa-devsecops-ro"          # opcional: perfil fijo para probar la sesión
 
 # Alias cortos → nombre exacto del permission set en Identity Center.

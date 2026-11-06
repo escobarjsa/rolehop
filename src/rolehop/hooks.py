@@ -17,7 +17,7 @@ from pathlib import Path
 # (time, nice, nohup, timeout N) y asignaciones VAR=valor delante; o un AWS_PROFILE= explícito.
 AWS_CMD_RE = re.compile(
     r"(^|[;&|(]|\$\()\s*((time|nice|nohup|timeout\s+\d+[smh]?)\s+)*([A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
-    r"(aws|awsorg|terraform|tofu|terragrunt|cdk|sam|eksctl|kubectl)(\s|$)|AWS_PROFILE=")
+    r"(aws|rolehop|terraform|tofu|terragrunt|cdk|sam|eksctl|kubectl)(\s|$)|AWS_PROFILE=")
 PROFILE_RE = re.compile(r"AWS_PROFILE=([A-Za-z0-9_.-]+)")
 PROFILE_FLAG_RE = re.compile(r"--profile[ =]([A-Za-z0-9_.-]+)")
 ORG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -57,7 +57,7 @@ def _get(data: dict, *paths: tuple[str, ...]) -> str:
 
 
 def _org_for(profile: str) -> str:
-    from awsorg import cli
+    from rolehop import cli
     org = None
     try:
         for row in cli.catalog(cli.load_orgs()):
@@ -75,7 +75,7 @@ def _herdr_title(text: str | None) -> None:
     herdr = os.environ.get("HERDR_BIN_PATH") or shutil.which("herdr")
     if not pane or not herdr:
         return
-    args = [herdr, "pane", "report-metadata", "--source", "awsorg"]
+    args = [herdr, "pane", "report-metadata", "--source", "rolehop"]
     args += ["--title", text] if text else ["--clear-title"]
     try:
         subprocess.Popen(args + [pane], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -101,7 +101,7 @@ def _emit(fmt: str, event: str, message: str) -> None:
 
 def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
     """Hook tras un comando de shell: detecta la sesión SSO expirada y avisa al agente."""
-    from awsorg import cli
+    from rolehop import cli
     try:
         data = json.loads(stdin if stdin is not None else sys.stdin.read())
     except (ValueError, OSError):

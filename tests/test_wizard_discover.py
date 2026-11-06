@@ -1,4 +1,4 @@
-"""Asistente `awsorg init` y `discover` contra un portal SSO simulado (sin red real ni credenciales)."""
+"""Asistente `rolehop init` y `discover` contra un portal SSO simulado (sin red real ni credenciales)."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def portal(env, monkeypatch):
     cli, p = env
     srv = HTTPServer(("127.0.0.1", 0), Portal)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    monkeypatch.setenv("AWSORG_PORTAL_ENDPOINT", f"http://127.0.0.1:{srv.server_port}")
+    monkeypatch.setenv("ROLEHOP_PORTAL_ENDPOINT", f"http://127.0.0.1:{srv.server_port}")
     p.cache.mkdir(parents=True)
     exp = (dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     for name in ("empresa", "personal"):

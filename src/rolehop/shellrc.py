@@ -7,8 +7,9 @@ import os
 import shutil
 from pathlib import Path
 
-MARK_BEGIN = "# >>> awsorg (gestionado por awsorg setup) >>>"
-MARK_END = "# <<< awsorg <<<"
+MARK_BEGIN = "# >>> rolehop (gestionado por rolehop setup) >>>"
+MARK_END = "# <<< rolehop <<<"
+LEGACY_MARKS = ("# >>> awsorg (gestionado por awsorg setup) >>>", "# <<< awsorg <<<")  # nombre anterior
 
 
 def detect_shell() -> str:
@@ -48,6 +49,15 @@ def block_for(shell: str, with_direnv: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _strip_managed(text: str, shell: str) -> str:
+    """Texto del rc sin nuestros bloques (actual y del nombre anterior), para no contarnos a nosotros mismos."""
+    text = text.replace(block_for(shell, True), "")
+    for begin, end in ((MARK_BEGIN, MARK_END), LEGACY_MARKS):
+        if begin in text and end in text:
+            text = text[:text.index(begin)] + text[text.index(end) + len(end):]
+    return text
+
+
 def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, shell: str | None = None) -> list[str]:
     """Añade (o actualiza) el bloque gestionado en el rc de la shell. Devuelve mensajes para el usuario."""
     home = home or Path.home()
@@ -56,18 +66,23 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
     target = rc.resolve() if rc.is_symlink() else rc
     current = target.read_text() if target.exists() else ""
     has_direnv = shutil.which("direnv") is not None
-    already_direnv = f"direnv hook {shell}" in current.replace(block_for(shell, True), "")
+    already_direnv = f"direnv hook {shell}" in _strip_managed(current, shell)
     wanted = block_for(shell, has_direnv and not already_direnv)
     msgs: list[str] = []
-    if MARK_BEGIN in current and MARK_END in current:
-        start = current.index(MARK_BEGIN)
-        end = current.index(MARK_END) + len(MARK_END)
+    begin, end_mark = (MARK_BEGIN, MARK_END) if MARK_BEGIN in current else LEGACY_MARKS
+    if begin in current and end_mark in current:
+        start = current.index(begin)
+        end = current.index(end_mark) + len(end_mark)
         if current[end:end + 1] == "\n":
             end += 1
         new = current[:start] + wanted + current[end:]
     else:
         sep = "" if not current or current.endswith("\n\n") else ("\n" if current.endswith("\n") else "\n\n")
         new = current + sep + wanted
+    lb, le = LEGACY_MARKS
+    if begin == MARK_BEGIN and lb in new and le in new:  # quedaba también el bloque antiguo: fuera
+        s, e = new.index(lb), new.index(le) + len(le)
+        new = new[:s].rstrip("\n") + "\n" + new[e:].lstrip("\n")
     if new == current:
         msgs.append(f"✓ {rc} ya tiene ~/.local/bin en el PATH" + (" y direnv" if has_direnv else ""))
         return msgs

@@ -1,10 +1,14 @@
-# Seguridad
+# Security Policy
 
-## Reportar una vulnerabilidad
-Usa **GitHub → Security → Report a vulnerability** (aviso privado) en este repositorio. No abras un issue público para fallos de seguridad.
+## Reporting a vulnerability
 
-## Modelo de seguridad
-- `awsorg` no almacena ni escribe tokens o claves. El login y la renovación los hace el AWS CLI.
-- `init` y `discover` leen el token SSO del caché del AWS CLI solo en memoria para consultar el portal de AWS (`portal.sso.<región>.amazonaws.com`) y nunca lo imprimen ni lo registran.
-- `orgs.toml` no contiene secretos. Aun así, se validan todos sus valores antes de escribir `~/.aws/config`.
-- Las instrucciones instaladas en agentes de IA les prohíben leer `~/.aws` y exportar credenciales. Considéralas una guía, no una barrera: protege tu equipo con los mecanismos de cada agente (sandbox, reglas de permisos).
+Please use **GitHub → Security → Report a vulnerability** on this repository to report privately. Do not open a public issue for security problems.
+
+## Security model
+
+- `rolehop` never stores or writes tokens or keys. Login and credential refresh are handled by the AWS CLI.
+- `init` and `discover` read the SSO token from the AWS CLI cache in memory only, to query the AWS access portal (`portal.sso.<region>.amazonaws.com`). It is never printed or logged.
+- `orgs.toml` contains no secrets. Every value is still validated before `~/.aws/config` is written.
+- The rules installed into AI agents forbid reading `~/.aws` and exporting credentials. Treat them as guidance, not a barrier: protect your machine with each agent's own sandbox and permission features.
+
+See the [security documentation](https://escobarjsa.github.io/rolehop/reference/security/) for details.

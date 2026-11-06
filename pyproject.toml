@@ -3,20 +3,21 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "awsorg"
-version = "1.2.0"
-description = "Perfiles AWS IAM Identity Center para varias organizaciones que se renuevan solos, listos para humanos y agentes de IA (Claude Code, Codex, Kiro, Gemini…)."
+name = "rolehop"
+version = "1.3.0"
+description = "Auto-refreshing AWS IAM Identity Center profiles for many organizations, ready for humans and AI coding agents (Claude Code, Codex, Kiro, Gemini…)."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "escobarjsa" }]
-keywords = ["aws", "sso", "iam-identity-center", "aws-cli", "profiles", "claude-code", "codex", "kiro", "ai-agents"]
+keywords = ["aws", "sso", "aws-sso", "rolehop", "iam-identity-center", "aws-cli", "profiles", "claude-code", "codex", "kiro", "ai-agents"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: System Administrators",
+  "Natural Language :: English",
   "Natural Language :: Spanish",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
@@ -31,23 +32,25 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/escobarjsa/awsorg"
-Repository = "https://github.com/escobarjsa/awsorg"
-Issues = "https://github.com/escobarjsa/awsorg/issues"
-Changelog = "https://github.com/escobarjsa/awsorg/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/escobarjsa/rolehop"
+Documentation = "https://escobarjsa.github.io/rolehop/"
+Repository = "https://github.com/escobarjsa/rolehop"
+Issues = "https://github.com/escobarjsa/rolehop/issues"
+Changelog = "https://github.com/escobarjsa/rolehop/blob/main/CHANGELOG.md"
 
 [project.scripts]
-awsorg = "awsorg.cli:main"
-awslogin = "awsorg.cli:awslogin_main"
+rolehop = "rolehop.cli:main"
+awslogin = "rolehop.cli:awslogin_main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
+docs = ["zensical>=0.1"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/awsorg"]
+packages = ["src/rolehop"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/awsorg", "tests", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "docs"]
+include = ["src/rolehop", "tests", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "docs", "zensical.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

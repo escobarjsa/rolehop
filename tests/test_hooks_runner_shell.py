@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from awsorg import hooks, runner, shellrc
+from rolehop import hooks, runner, shellrc
 
 
 def run_hook(capsys, payload, fmt="claude"):

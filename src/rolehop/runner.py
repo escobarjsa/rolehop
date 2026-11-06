@@ -1,4 +1,4 @@
-"""`awsorg run`: comprobar (y renovar) la sesión antes de dejar trabajando a un agente, y avisar si algo quedó bloqueado."""
+"""`rolehop run`: comprobar (y renovar) la sesión antes de dejar trabajando a un agente, y avisar si algo quedó bloqueado."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def fmt(minutes: int) -> str:
 
 
 def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: list[str]) -> int:
-    from awsorg import cli
+    from rolehop import cli
     max_min = parse_minutes(max_value)
     if not max_min:
         print(f"✗ Duración inválida: {max_value} (usa 90m, 3h, 1h30m)")

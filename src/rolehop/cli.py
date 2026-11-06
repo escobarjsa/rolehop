@@ -1,7 +1,7 @@
-"""awsorg: perfiles AWS IAM Identity Center declarativos para N organizaciones.
+"""rolehop: perfiles AWS IAM Identity Center declarativos para N organizaciones.
 
 Genera perfiles nativos `sso-session` en ~/.aws/config a partir de orgs.toml. Login y renovación los hace
-el AWS CLI o los SDK: awsorg nunca escribe tokens ni claves.
+el AWS CLI o los SDK: rolehop nunca escribe tokens ni claves.
 
 Subcomandos:
   setup                        todo en uno: PATH, asistente si falta config, perfiles y agentes de IA
@@ -15,7 +15,7 @@ Subcomandos:
   envrc PERFIL [--state P]     imprime un .envrc para direnv
   discover ORG                 lista cuentas y roles reales de una org (requiere sesión)
 
-Configuración: $AWSORG_CONFIG o ~/.config/awsorg/orgs.toml
+Configuración: $ROLEHOP_CONFIG o ~/.config/rolehop/orgs.toml
 Destino:       $AWS_CONFIG_FILE o ~/.aws/config
 """
 from __future__ import annotations
@@ -32,14 +32,39 @@ import sys
 from pathlib import Path
 
 if sys.version_info < (3, 11):  # noqa: UP036 — mensaje claro si se ejecuta con un Python antiguo
-    sys.exit("awsorg necesita Python 3.11 o superior (por tomllib).")
+    sys.exit("rolehop necesita Python 3.11 o superior (por tomllib).")
 import tomllib  # noqa: E402
 
-from awsorg import __version__ as VERSION  # noqa: E402
+from rolehop import __version__ as VERSION  # noqa: E402
 HOME = Path.home()
-CONFIG_PATH = Path(os.environ.get("AWSORG_CONFIG") or HOME / ".config/awsorg/orgs.toml")
+LEGACY_NAME = "awsorg"  # nombre anterior de la herramienta (hasta 1.2.0): se reconocen sus archivos y marcadores
+
+
+def _env(name: str) -> str | None:
+    """Variable ROLEHOP_<name>, o la antigua AWSORG_<name> si no está definida."""
+    return os.environ.get(f"ROLEHOP_{name}") or os.environ.get(f"{LEGACY_NAME.upper()}_{name}") or None
+
+
+CONFIG_PATH = Path(_env("CONFIG") or HOME / ".config/rolehop/orgs.toml")
+LEGACY_CONFIG_PATH = HOME / f".config/{LEGACY_NAME}/orgs.toml"
 AWS_CONFIG = Path(os.environ.get("AWS_CONFIG_FILE") or HOME / ".aws/config")
-STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "awsorg"
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "rolehop"
+LEGACY_STATE_DIR = STATE_DIR.with_name(LEGACY_NAME)
+MARK_NAMES = f"(?:rolehop|{LEGACY_NAME})"  # marcadores de bloque aceptados al leer ~/.aws/config
+
+
+def migrate_legacy() -> list[str]:
+    """Copia orgs.toml y el estado de awsorg a las rutas de rolehop si aún no existen. No borra nada."""
+    msgs = []
+    if not _env("CONFIG") and not CONFIG_PATH.exists() and LEGACY_CONFIG_PATH.is_file():
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(LEGACY_CONFIG_PATH, CONFIG_PATH)
+        os.chmod(CONFIG_PATH, 0o600)
+        msgs.append(f"✓ migrado {LEGACY_CONFIG_PATH} → {CONFIG_PATH} (el original se conserva)")
+    if not STATE_DIR.exists() and LEGACY_STATE_DIR.is_dir():
+        shutil.copytree(LEGACY_STATE_DIR, STATE_DIR)
+        msgs.append(f"✓ migrado el estado de {LEGACY_STATE_DIR} → {STATE_DIR}")
+    return msgs
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # Mensajes reales de AWS CLI / botocore / aws-sdk-go-v2 cuando la sesión SSO terminó.
 EXPIRED_RE = re.compile(
@@ -55,11 +80,11 @@ ARN_RE = re.compile(r"^arn:aws[\w-]*:iam::\d{12}:role/[\w+=,.@/-]+$")
 
 
 def begin_marker(org: str) -> str:
-    return f"# >>> awsorg:{org} (gestionado por awsorg, no editar) >>>"
+    return f"# >>> rolehop:{org} (gestionado por rolehop, no editar) >>>"
 
 
 def end_marker(org: str) -> str:
-    return f"# <<< awsorg:{org} <<<"
+    return f"# <<< rolehop:{org} <<<"
 
 
 # --------------------------------------------------------------------------- config
@@ -226,7 +251,7 @@ def render_block(org: dict) -> str:
         out += [f"[profile {n}-{ar['name']}]",
                 f"role_arn = {ar['role_arn']}",
                 f"source_profile = {src}",
-                f"role_session_name = awsorg-{n}-{ar['name']}"]
+                f"role_session_name = rolehop-{n}-{ar['name']}"]
         if ar.get("external_id"):
             out.append(f"external_id = {ar['external_id']}")
         if ar.get("duration_seconds"):
@@ -242,22 +267,22 @@ def split_blocks(text: str) -> tuple[str, dict[str, str]]:
     """Separa el archivo en texto libre (con marcadores de posición) y bloques gestionados."""
     blocks: dict[str, str] = {}
     pattern = re.compile(
-        r"^# >>> awsorg:(?P<org>[a-z0-9_-]+) .*?>>>\n(?P<body>.*?)^# <<< awsorg:(?P=org) <<<\n?",
+        rf"^# >>> {MARK_NAMES}:(?P<org>[a-z0-9_-]+) .*?>>>\n(?P<body>.*?)^# <<< {MARK_NAMES}:(?P=org) <<<\n?",
         re.S | re.M)
 
     def repl(m: re.Match) -> str:
         if m["org"] in blocks:
-            raise ConfigError(f"El bloque awsorg:{m['org']} aparece dos veces en {AWS_CONFIG}. "
+            raise ConfigError(f"El bloque rolehop:{m['org']} aparece dos veces en {AWS_CONFIG}. "
                               f"Deja uno solo (haz copia antes) y repite.")
         blocks[m["org"]] = m.group(0).rstrip("\n")
-        return f"\0AWSORG:{m['org']}\0\n"
+        return f"\0ROLEHOP:{m['org']}\0\n"
 
     if "\0" in text:
         raise ConfigError(f"{AWS_CONFIG} contiene bytes nulos: revísalo o restaura una copia .bak.")
     free = pattern.sub(repl, text)
-    leftover = re.findall(r"^# (?:>>>|<<<) awsorg:([a-z0-9_-]+)", free, re.M)
+    leftover = re.findall(rf"^# (?:>>>|<<<) {MARK_NAMES}:([a-z0-9_-]+)", free, re.M)
     if leftover:
-        raise ConfigError(f"Marcadores de awsorg incompletos o manipulados para: {', '.join(sorted(set(leftover)))} "
+        raise ConfigError(f"Marcadores de rolehop incompletos o manipulados para: {', '.join(sorted(set(leftover)))} "
                           f"en {AWS_CONFIG}. Corrige o borra ese bloque a mano (haz copia antes).")
     return free, blocks
 
@@ -268,7 +293,7 @@ SSO_SESSION_RE = re.compile(r"^\[sso-session\s+(?P<name>[^\]]+?)\]\s*$", re.M)
 
 def conflicts(free_text: str, org: dict) -> list[str]:
     """Secciones fuera de bloques gestionados que chocarían con las generadas."""
-    clean = re.sub(r"\0AWSORG:[^\0]+\0", "", free_text)
+    clean = re.sub(r"\0ROLEHOP:[^\0]+\0", "", free_text)
     existing_profiles = {m["name"].strip() for m in SECTION_RE.finditer(clean)
                          if not m.group(0).startswith("[sso-session")}
     existing_sessions = {m["name"].strip() for m in SSO_SESSION_RE.finditer(clean)}
@@ -290,12 +315,12 @@ def cmd_sync(args) -> int:
         if c:
             problems[org["name"]] = c
     if problems:
-        print("✗ Hay secciones en tu config, fuera de los bloques de awsorg, que chocan con perfiles generados:",
+        print("✗ Hay secciones en tu config, fuera de los bloques de rolehop, que chocan con perfiles generados:",
               file=sys.stderr)
         for org, items in problems.items():
             for it in items:
                 print(f"    [{org}] {it}", file=sys.stderr)
-        print("  Renómbralas o bórralas a mano (haz copia antes) y vuelve a ejecutar `awsorg sync`.",
+        print("  Renómbralas o bórralas a mano (haz copia antes) y vuelve a ejecutar `rolehop sync`.",
               file=sys.stderr)
         return 2
 
@@ -303,7 +328,7 @@ def cmd_sync(args) -> int:
     stale = [n for n in blocks if n not in wanted]
     new_free = free
     for name, body in wanted.items():
-        token = f"\0AWSORG:{name}\0\n"
+        token = f"\0ROLEHOP:{name}\0\n"
         if token in new_free:
             new_free = new_free.replace(token, body + "\n", 1)
         else:
@@ -313,7 +338,7 @@ def cmd_sync(args) -> int:
                 new_free += "\n"
             new_free += body + "\n"
     for name in stale:
-        token = f"\0AWSORG:{name}\0\n"
+        token = f"\0ROLEHOP:{name}\0\n"
         new_free = new_free.replace(token, "" if args.prune else blocks[name] + "\n", 1)
     if stale and not args.prune:
         print(f"! Bloques de orgs que ya no están en orgs.toml (se conservan; usa --prune para quitarlos): "
@@ -347,7 +372,7 @@ def cmd_sync(args) -> int:
         shutil.copy2(target, backup)
         os.chmod(backup, 0o600)
         print(f"\n✓ Copia de seguridad: {backup}")
-    tmp = target.with_name(target.name + ".awsorg-tmp")
+    tmp = target.with_name(target.name + ".rolehop-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         fh.write(new_free)
@@ -512,9 +537,9 @@ def cmd_envrc(args) -> int:
     names = {r["profile"] for r in catalog(load_orgs())}
     for p in [args.profile] + ([args.state] if args.state else []):
         if p not in names:
-            print(f"✗ Perfil desconocido: {p}. Mira `awsorg list`.", file=sys.stderr)
+            print(f"✗ Perfil desconocido: {p}. Mira `rolehop list`.", file=sys.stderr)
             return 2
-    print("# .envrc generado por awsorg: perfil AWS por defecto de este repo.")
+    print("# .envrc generado por rolehop: perfil AWS por defecto de este repo.")
     print("# La IA puede usar otro perfil anteponiendo AWS_PROFILE=<perfil> a un comando.")
     print(f"export AWS_PROFILE={args.profile}")
     if args.state:
@@ -524,7 +549,7 @@ def cmd_envrc(args) -> int:
 
 
 # --------------------------------------------------------------------------- portal SSO (stdlib)
-SSO_CACHE = Path(os.environ.get("AWSORG_SSO_CACHE") or HOME / ".aws/sso/cache")
+SSO_CACHE = Path(_env("SSO_CACHE") or HOME / ".aws/sso/cache")
 
 
 class PortalError(Exception):
@@ -555,7 +580,7 @@ def _portal_get(region: str, path: str, token: str, params: dict) -> dict:
     import urllib.error
     import urllib.parse
     import urllib.request
-    base = os.environ.get("AWSORG_PORTAL_ENDPOINT", f"https://portal.sso.{region}.amazonaws.com")
+    base = _env("PORTAL_ENDPOINT") or f"https://portal.sso.{region}.amazonaws.com"
     url = f"{base}{path}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"x-amz-sso_bearer_token": token, "Accept": "application/json"})
     try:
@@ -657,9 +682,9 @@ def _yes(prompt: str, default: bool = True) -> bool:
 
 def toml_dump(orgs: list[dict]) -> str:
     q = json.dumps
-    lines = ["# orgs.toml — organizaciones de AWS Identity Center para awsorg.",
-             "# Generado/actualizado por `awsorg init`. Puedes editarlo a mano; después ejecuta `awsorg sync`.",
-             "# Documentación: https://github.com/escobarjsa/awsorg", ""]
+    lines = ["# orgs.toml — organizaciones de AWS Identity Center para rolehop.",
+             "# Generado/actualizado por `rolehop init`. Puedes editarlo a mano; después ejecuta `rolehop sync`.",
+             "# Documentación: https://github.com/escobarjsa/rolehop", ""]
     for org in orgs:
         lines += ["[[org]]", f"name = {q(org['name'])}", f"start_url = {q(org['start_url'])}",
                   f"sso_region = {q(org['sso_region'])}", f"region = {q(org.get('region', org['sso_region']))}",
@@ -847,7 +872,7 @@ def _wizard_refresh_org(org: dict) -> None:
 
 
 def cmd_init(args) -> int:
-    print("\n=== Asistente de awsorg: organizaciones de AWS Identity Center ===")
+    print("\n=== Asistente de rolehop: organizaciones de AWS Identity Center ===")
     orgs: list[dict] = []
     if CONFIG_PATH.exists():
         try:
@@ -886,7 +911,7 @@ def cmd_init(args) -> int:
         return 0
     _write_orgs(orgs)
     load_orgs()  # validación final con las mismas reglas que sync
-    print("\n  Siguiente paso: `awsorg sync --dry-run` y luego `awsorg sync` (o el instalador lo hace por ti).")
+    print("\n  Siguiente paso: `rolehop sync --dry-run` y luego `rolehop sync` (o el instalador lo hace por ti).")
     return 0
 
 
@@ -926,7 +951,7 @@ def cmd_which_org(args) -> int:
 
 # --------------------------------------------------------------------------- run / hook / agent / setup
 def cmd_run(args) -> int:
-    from awsorg import runner
+    from rolehop import runner
     cmd = list(args.command)
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
@@ -934,7 +959,7 @@ def cmd_run(args) -> int:
 
 
 def cmd_hook(args) -> int:
-    from awsorg import hooks
+    from rolehop import hooks
     try:
         if args.kind == "post-tool":
             return hooks.post_tool(args.format)
@@ -944,7 +969,7 @@ def cmd_hook(args) -> int:
 
 
 def cmd_agent(args) -> int:
-    from awsorg import agents
+    from rolehop import agents
     home = Path.home()
     if args.action == "rules":
         print(agents.rules_text())
@@ -965,7 +990,7 @@ def cmd_agent(args) -> int:
         print(f"✗ {exc.args[0]}", file=sys.stderr)
         return 2
     if not targets:
-        print("No detecté agentes de IA instalados. Indica cuáles: awsorg agent install claude codex …")
+        print("No detecté agentes de IA instalados. Indica cuáles: rolehop agent install claude codex …")
         return 1
     ch = agents.Changes(args.dry_run)
     for a in targets:
@@ -981,14 +1006,14 @@ def cmd_agent(args) -> int:
 
 
 def cmd_setup(args) -> int:
-    from awsorg import shellrc
+    from rolehop import shellrc
     print("==> 1. Shell (PATH y direnv)")
     for m in shellrc.ensure_shell_integration(dry_run=args.dry_run):
         print(f"  {m}")
     print("==> 2. Organizaciones")
     if not CONFIG_PATH.exists():
         if args.dry_run or not sys.stdin.isatty():
-            print(f"  ! No existe {CONFIG_PATH}. Ejecuta `awsorg init` (asistente) y repite `awsorg setup`.")
+            print(f"  ! No existe {CONFIG_PATH}. Ejecuta `rolehop init` (asistente) y repite `rolehop setup`.")
             return 0 if args.dry_run else 1
         rc = cmd_init(args)
         if rc != 0 or not CONFIG_PATH.exists():
@@ -1006,9 +1031,9 @@ def cmd_setup(args) -> int:
         rc = cmd_agent(argparse.Namespace(action="install", names=args.agents or [], all=False,
                                           dry_run=args.dry_run, no_hooks=False, json=False))
         if rc == 1 and not args.agents:
-            print("  (sin agentes detectados; instala luego con: awsorg agent install <agente>)")
+            print("  (sin agentes detectados; instala luego con: rolehop agent install <agente>)")
     print("==> Listo")
-    print("  Siguiente: awslogin  ·  awsorg status  ·  dile a tu agente «usa los perfiles y roles de AWS que necesites»")
+    print("  Siguiente: awslogin  ·  rolehop status  ·  dile a tu agente «usa los perfiles y roles de AWS que necesites»")
     return 0
 
 
@@ -1018,8 +1043,8 @@ def awslogin_main() -> int:
 
 # --------------------------------------------------------------------------- main
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="awsorg", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--version", action="version", version=f"awsorg {VERSION}")
+    ap = argparse.ArgumentParser(prog="rolehop", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--version", action="version", version=f"rolehop {VERSION}")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="{setup,init,sync,login,status,list,run,agent,envrc,discover}")
 
     s = sub.add_parser("sync", help="escribe los perfiles en ~/.aws/config")
@@ -1096,6 +1121,12 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(func=cmd_which_org)
 
     args = ap.parse_args(argv)
+    if args.cmd not in ("hook", "_mark", "_which-org"):
+        try:
+            for msg in migrate_legacy():
+                print(msg, file=sys.stderr)
+        except OSError as exc:
+            print(f"! No pude migrar la configuración de {LEGACY_NAME}: {exc}", file=sys.stderr)
     try:
         return args.func(args)
     except ConfigError as exc:

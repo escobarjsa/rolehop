@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/awsorg
+      url: https://pypi.org/p/rolehop
     permissions:
       id-token: write
     steps:
