@@ -1,5 +1,5 @@
 ---
-title: rolehop
+title: AWS SSO profiles for humans and AI agents
 description: Auto-refreshing AWS IAM Identity Center profiles for many organizations, ready for humans and AI coding agents.
 ---
 
