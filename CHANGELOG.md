@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-11-06
+
+### Fixed
+- `--dry-run` no longer copies the legacy `awsorg` configuration and state.
+- `setup` only reports adding the direnv hook when it actually adds it.
+
 ## [1.3.0] - 2026-11-06
 
 ### Changed
@@ -30,5 +36,6 @@ First release as a Python package (as `awsorg`).
 ### Inherited from the script versions (1.0–1.1)
 - Declarative `sso-session` profiles for any number of organizations, `init` wizard with discovery through the AWS access portal API (standard library), `discover`, `status`, `login`, full validation, atomic writes, symlink support and backups.
 
+[1.3.1]: https://github.com/escobarjsa/rolehop/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/escobarjsa/rolehop/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/escobarjsa/rolehop/releases/tag/v1.2.0

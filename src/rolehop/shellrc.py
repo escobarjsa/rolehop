@@ -67,7 +67,8 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
     current = target.read_text() if target.exists() else ""
     has_direnv = shutil.which("direnv") is not None
     already_direnv = f"direnv hook {shell}" in _strip_managed(current, shell)
-    wanted = block_for(shell, has_direnv and not already_direnv)
+    add_direnv = has_direnv and not already_direnv
+    wanted = block_for(shell, add_direnv)
     msgs: list[str] = []
     begin, end_mark = (MARK_BEGIN, MARK_END) if MARK_BEGIN in current else LEGACY_MARKS
     if begin in current and end_mark in current:
@@ -87,7 +88,7 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
         msgs.append(f"✓ {rc} ya tiene ~/.local/bin en el PATH" + (" y direnv" if has_direnv else ""))
         return msgs
     if dry_run:
-        msgs.append(f"[dry-run] añadiría a {rc}: PATH con ~/.local/bin" + (" + hook de direnv" if has_direnv else ""))
+        msgs.append(f"[dry-run] añadiría a {rc}: PATH con ~/.local/bin" + (" + hook de direnv" if add_direnv else ""))
         return msgs
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
@@ -95,7 +96,7 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
         shutil.copy2(target, backup)
         msgs.append(f"✓ copia de seguridad: {backup}")
     target.write_text(new)
-    msgs.append(f"✓ {rc}: ~/.local/bin en el PATH" + (" y hook de direnv" if has_direnv else ""))
+    msgs.append(f"✓ {rc}: ~/.local/bin en el PATH" + (" y hook de direnv" if add_direnv else ""))
     on_path = any(str(d) in os.environ.get("PATH", "").split(os.pathsep) for d in bin_dirs())
     if not on_path:
         msgs.append(f"! Abre una terminal nueva (o ejecuta: exec {shell}) para que el PATH se aplique.")

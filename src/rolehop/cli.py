@@ -1121,7 +1121,7 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(func=cmd_which_org)
 
     args = ap.parse_args(argv)
-    if args.cmd not in ("hook", "_mark", "_which-org"):
+    if args.cmd not in ("hook", "_mark", "_which-org") and not getattr(args, "dry_run", False):
         try:
             for msg in migrate_legacy():
                 print(msg, file=sys.stderr)

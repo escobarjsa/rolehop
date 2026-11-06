@@ -28,7 +28,7 @@
     ```bash
     uv tool install git+https://github.com/escobarjsa/rolehop
     # or pin a release
-    uv tool install git+https://github.com/escobarjsa/rolehop@v1.3.0
+    uv tool install git+https://github.com/escobarjsa/rolehop@v1.3.1
     ```
 
 This installs two commands:

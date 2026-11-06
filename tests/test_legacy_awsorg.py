@@ -118,3 +118,18 @@ def test_agentes_reemplazan_bloque_y_hooks_de_awsorg(tmp_path, monkeypatch):
     ch = agents.Changes(False)
     agents.uninstall(agents.AGENTS["claude"], home, ch)
     assert "Bash(awsorg login *)" not in json.loads(settings.read_text()).get("permissions", {}).get("deny", [])
+
+
+def test_dry_run_no_migra(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".config/awsorg").mkdir(parents=True)
+    (home / ".config/awsorg/orgs.toml").write_text(SAMPLE)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "aws-config"))
+    for var in ("ROLEHOP_CONFIG", "AWSORG_CONFIG"):
+        monkeypatch.delenv(var, raising=False)
+    import rolehop.cli as cli
+    cli = importlib.reload(cli)
+    cli.main(["sync", "--dry-run"])
+    assert not (home / ".config/rolehop/orgs.toml").exists()
