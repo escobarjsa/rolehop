@@ -1,0 +1,65 @@
+# orgs.toml: organizaciones de AWS IAM Identity Center que gestiona awsorg.
+# Copia este archivo a ~/.config/awsorg/orgs.toml y edítalo. No contiene secretos.
+# Después: `awsorg sync --dry-run` para revisar, `awsorg sync` para aplicar y `awslogin` para entrar.
+#
+# Cada [[org]] genera:
+#   [sso-session <name>]                      → un login por org (awslogin <name>)
+#   [profile <name>-<cuenta>-<rol>]           → un perfil por cuenta y rol
+#   [profile <name>-<assume_role.name>]       → perfiles encadenados opcionales
+#
+# Los perfiles se renuevan solos mientras dure la sesión del portal de Identity Center.
+
+[[org]]
+name = "empresa"                                  # minúsculas, números, - o _
+start_url = "https://EMPRESA.awsapps.com/start"   # URL del portal de acceso
+sso_region = "us-east-1"                          # región donde está Identity Center
+region = "us-east-1"                              # región por defecto de los perfiles
+login_flow = "device"                             # "device" (recomendado en WSL) o "pkce"
+portal_session_hours = 8                          # duración de la sesión del portal (solo para estimar)
+default_role = "ro"                               # rol que usa `awsorg status` para probar la sesión
+# probe_profile = "empresa-devsecops-ro"          # opcional: perfil fijo para probar la sesión
+
+# Alias cortos → nombre exacto del permission set en Identity Center.
+# En las cuentas puedes usar el alias o el nombre exacto del permission set.
+[org.roles]
+ro = "ReadOnly"
+power = "PowerUser"
+admin = "Administrator"
+
+[[org.accounts]]
+name = "devsecops"            # forma parte del nombre del perfil: empresa-devsecops-admin
+id = "111111111111"
+roles = ["ro", "power", "admin"]
+
+[[org.accounts]]
+name = "prod"
+id = "222222222222"
+roles = ["ro", "admin"]
+# region = "us-east-2"        # opcional: región distinta para esta cuenta
+
+# Opcional: roles IAM que se asumen desde un perfil SSO (role chaining).
+# source = "<cuenta>-<rol>" de esta misma org. Cada eslabón dura máximo 1 h, pero se renueva solo.
+# [[org.assume_roles]]
+# name = "deploy-prod"                                      # → perfil empresa-deploy-prod
+# role_arn = "arn:aws:iam::222222222222:role/DeployRole"
+# source = "devsecops-admin"
+# external_id = "opcional"
+# duration_seconds = 3600
+
+# Segunda organización (otro portal de Identity Center).
+[[org]]
+name = "personal"
+start_url = "https://PERSONAL.awsapps.com/start"
+sso_region = "us-east-1"
+region = "us-east-1"
+login_flow = "device"
+portal_session_hours = 8
+default_role = "admin"
+
+[org.roles]
+admin = "AdministratorAccess"
+
+[[org.accounts]]
+name = "main"
+id = "333333333333"
+roles = ["admin"]

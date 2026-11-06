@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+# Nunca subir configuración personal
+orgs.toml
+!src/awsorg/data/orgs.example.toml
+*.bak-*
