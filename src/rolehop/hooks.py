@@ -1,6 +1,6 @@
-"""Hooks para agentes de IA: detectar la sesión SSO expirada tras un comando de shell y cargar direnv al cambiar de carpeta.
+"""Hooks for AI agents: detect an expired SSO session after a shell command, and load direnv on directory change.
 
-Nunca bloquean nada ni leen credenciales. Ante cualquier error salen en silencio (código 0).
+They never block anything or read credentials. On any error they exit silently (exit code 0).
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-# ¿El comando toca AWS? Programa AWS al inicio de un segmento (tras ; & | ( o $( ), admitiendo envoltorios
-# (time, nice, nohup, timeout N) y asignaciones VAR=valor delante; o un AWS_PROFILE= explícito.
+# Does the command touch AWS? An AWS program at the start of a segment (after ; & | ( or $( ), allowing wrappers
+# (time, nice, nohup, timeout N) and VAR=value assignments in front; or an explicit AWS_PROFILE=.
 AWS_CMD_RE = re.compile(
     r"(^|[;&|(]|\$\()\s*((time|nice|nohup|timeout\s+\d+[smh]?)\s+)*([A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
     r"(aws|rolehop|terraform|tofu|terragrunt|cdk|sam|eksctl|kubectl)(\s|$)|AWS_PROFILE=")
@@ -22,17 +22,17 @@ PROFILE_RE = re.compile(r"AWS_PROFILE=([A-Za-z0-9_.-]+)")
 PROFILE_FLAG_RE = re.compile(r"--profile[ =]([A-Za-z0-9_.-]+)")
 ORG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
-# Campos donde cada agente entrega el comando y su salida (se prueban en orden).
+# Fields where each agent delivers the command and its output (tried in order).
 COMMAND_KEYS = (("tool_input", "command"), ("toolArgs", "command"), ("tool_input", "cmd"), ("command",))
 STDERR_KEYS = (("tool_response", "stderr"), ("tool_result", "stderr"), ("stderr",))
 ERROR_KEYS = (("error",), ("tool_response", "error"), ("tool_result", "error"), ("toolResult", "error"))
-# Salida combinada (stdout+stderr juntos) en agentes que no separan stderr (Gemini, Qwen, Copilot).
+# Combined output (stdout+stderr together) for agents that do not separate stderr (Gemini, Qwen, Copilot).
 COMBINED_KEYS = (("tool_response", "llmContent"), ("tool_response", "returnDisplay"), ("tool_response", "output"),
                  ("toolResult", "textResultForLlm"), ("tool_result", "textResultForLlm"), ("tool_response",))
 TOOL_KEYS = (("tool_name",), ("toolName",), ("tool",))
 SHELL_TOOLS = {"bash", "shell", "run_shell_command", "execute_command", "exec_command", "local_shell", "terminal",
                "execute_bash"}
-# Con salida combinada no se acepta el genérico "ExpiredToken" (aparece en datos legítimos, p. ej. CloudTrail).
+# With combined output the generic "ExpiredToken" is not accepted (it shows up in legitimate data, e.g. CloudTrail).
 STRICT_EXPIRED_RE = re.compile(
     r"Error when retrieving token from sso|The SSO session associated with this profile has expired"
     r"|UnauthorizedSSOToken|Token has expired and refresh failed|refresh cached SSO token failed"
@@ -43,7 +43,7 @@ def _get(data: dict, *paths: tuple[str, ...]) -> str:
     for path in paths:
         cur = data
         for key in path:
-            if isinstance(cur, str) and cur.lstrip().startswith("{"):  # p. ej. toolArgs de Copilot como JSON
+            if isinstance(cur, str) and cur.lstrip().startswith("{"):  # e.g. Copilot toolArgs as JSON
                 try:
                     cur = json.loads(cur)
                 except ValueError:
@@ -85,7 +85,7 @@ def _herdr_title(text: str | None) -> None:
 
 
 def _emit(fmt: str, event: str, message: str) -> None:
-    """Devuelve contexto al agente en su formato."""
+    """Return context to the agent in its own format."""
     default_event = {"claude": "PostToolUse", "codex": "PostToolUse", "qwen": "PostToolUse", "gemini": "AfterTool",
                      "copilot": "PostToolUse"}
     if fmt in ("claude", "codex", "qwen", "gemini"):
@@ -93,14 +93,14 @@ def _emit(fmt: str, event: str, message: str) -> None:
     elif fmt == "copilot":
         out = {"additionalContext": message,
                "hookSpecificOutput": {"hookEventName": event or "PostToolUse", "additionalContext": message}}
-    else:  # genérico: texto plano por stdout
+    else:  # generic: plain text on stdout
         print(message)
         return
     print(json.dumps(out, ensure_ascii=False))
 
 
 def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
-    """Hook tras un comando de shell: detecta la sesión SSO expirada y avisa al agente."""
+    """Post-shell-command hook: detect an expired SSO session and notify the agent."""
     from rolehop import cli
     try:
         data = json.loads(stdin if stdin is not None else sys.stdin.read())
@@ -143,11 +143,11 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
         who = org or "<org>"
         if org:
             cli.write_state(org, blocked=True, blocked_at=cli.dt.datetime.now(cli.dt.timezone.utc).isoformat())
-        _herdr_title(f"⚠ AWS: ejecuta awslogin {who}")
-        msg = (f"AWS SSO: la sesión de la organización '{who}' terminó (perfil: {profile or 'desconocido'}). "
-               f"DETENTE con AWS: no reintentes ni cambies de perfil para esquivarlo. Pide al usuario que ejecute "
-               f"en su terminal: awslogin {who} . Mientras tanto puedes seguir con tareas que no usen AWS. "
-               f"Cuando confirme, continúa desde donde quedaste.")
+        _herdr_title(f"⚠ AWS: run awslogin {who}")
+        msg = (f"AWS SSO: the session for organization '{who}' has expired (profile: {profile or 'unknown'}). "
+               f"STOP using AWS: do not retry, and do not switch to another profile to work around it. Ask the user "
+               f"to run this in their terminal: awslogin {who} . Meanwhile, you can continue with tasks that do not "
+               f"use AWS. Once the user confirms, resume where you left off.")
         _emit(fmt, event, msg)
         return 0
 
@@ -160,7 +160,7 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
 
 
 def cwd_direnv(stdin: str | None = None) -> int:
-    """Hook CwdChanged (Claude Code): carga el .envrc aprobado de la nueva carpeta vía $CLAUDE_ENV_FILE."""
+    """CwdChanged hook (Claude Code): load the approved .envrc of the new directory via $CLAUDE_ENV_FILE."""
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     direnv = shutil.which("direnv")
     if not env_file or not direnv:

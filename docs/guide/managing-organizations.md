@@ -26,10 +26,10 @@ rolehop refresh --prune       # also remove what was revoked (asks for confirmat
 
 ```console
 $ rolehop refresh --prune
-acme: 9 cuenta(s) en el portal
-  + rol acme-prod-ro (ReadOnly)
-  + cuenta billing (444444444444): admin
-  - rol acme-sandbox-power (PowerUser): revocado
+acme: 9 account(s) in the portal
+  + role acme-prod-ro (ReadOnly)
+  + account billing (444444444444): admin
+  - role acme-sandbox-power (PowerUser): revoked
 ```
 
 !!! tip "Let your agent do it"

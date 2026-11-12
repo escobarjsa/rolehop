@@ -1,10 +1,10 @@
-"""`rolehop agent`: instala las instrucciones (y hooks, donde el agente los soporta) en agentes de IA de código.
+"""`rolehop agent`: installs the rules (and hooks, where the agent supports them) into AI coding agents.
 
-Cada agente tiene:
-  - instrucciones globales: un archivo propio en un directorio de reglas, o un bloque con marcadores
-    dentro de un archivo único (AGENTS.md, GEMINI.md…);
-  - opcionalmente, hooks tras ejecutar comandos de shell para detectar la sesión SSO expirada.
-Todo es idempotente, con copia de seguridad y desinstalable.
+Each agent gets:
+  - global rules: either a dedicated file in a rules directory, or a marker-delimited block
+    inside a single shared file (AGENTS.md, GEMINI.md…);
+  - optionally, post-shell-command hooks that detect an expired SSO session.
+Everything is idempotent, backed up and uninstallable.
 """
 
 from __future__ import annotations
@@ -17,13 +17,17 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
-from rolehop.shellrc import find_block
+from rolehop.shellrc import find_any_block, find_block
 
-MD_BEGIN = "<!-- >>> rolehop (gestionado por rolehop, no editar) >>> -->"
+MD_BEGIN = "<!-- >>> rolehop (managed by rolehop, do not edit) >>> -->"
 MD_END = "<!-- <<< rolehop <<< -->"
-LEGACY_HOOK_MARKERS = ("awsorg/hooks/aws-expired.sh", "awsorg/hooks/aws-cwd-direnv.sh")  # scripts del kit
-# Nombre anterior de la herramienta (awsorg, hasta 1.2.0): se reconoce y se reemplaza al instalar.
-LEGACY_MD = ("<!-- >>> awsorg (gestionado por awsorg, no editar) >>> -->", "<!-- <<< awsorg <<< -->")
+LEGACY_HOOK_MARKERS = ("awsorg/hooks/aws-expired.sh", "awsorg/hooks/aws-cwd-direnv.sh")  # old kit scripts
+# Markers written by older versions: recognized and replaced on install, removed on uninstall.
+LEGACY_MD: list[tuple[str, str]] = [
+    ("<!-- >>> rolehop (gestionado por rolehop, no editar) >>> -->", "<!-- <<< rolehop <<< -->"),  # rolehop <= 1.4.0
+    ("<!-- >>> awsorg (gestionado por awsorg, no editar) >>> -->", "<!-- <<< awsorg <<< -->"),      # awsorg <= 1.2.0
+]
+ALL_MD: list[tuple[str, str]] = [(MD_BEGIN, MD_END), *LEGACY_MD]
 LEGACY_DENY = ["Bash(awsorg login *)", "Bash(awsorg run --login *)"]
 CLAUDE_DENY = [
     "Read(~/.aws/**)", "Edit(~/.aws/**)",
@@ -39,8 +43,8 @@ class Agent:
     name: str
     binaries: tuple[str, ...]
     config_dirs: tuple[str, ...]
-    rules_path: str | None              # relativo a HOME
-    rules_mode: str = "block"           # "file" (archivo propio) | "block" (bloque en archivo único) | "ui"
+    rules_path: str | None              # relative to HOME
+    rules_mode: str = "block"           # "file" (dedicated file) | "block" (block in a shared file) | "ui"
     frontmatter: str = ""
     hooks: str | None = None            # "claude" | "codex" | "copilot" | "gemini" | "qwen"
     notes: list[str] = field(default_factory=list)
@@ -52,24 +56,24 @@ class Agent:
 AGENTS: dict[str, Agent] = {a.key: a for a in [
     Agent("claude", "Claude Code", ("claude",), (".claude",), ".claude/rules/aws.md", "file", hooks="claude"),
     Agent("codex", "OpenAI Codex CLI", ("codex",), (".codex",), ".codex/AGENTS.md", hooks="codex",
-          notes=["Codex pide confiar en los hooks nuevos: abre Codex y apruébalos con /hooks."]),
+          notes=["Codex asks you to trust new hooks: open Codex and approve them with /hooks."]),
     Agent("kiro", "Kiro (CLI e IDE)", ("kiro-cli", "kiro"), (".kiro",), ".kiro/steering/aws.md", "file",
           frontmatter="---\ninclusion: always\n---\n\n",
-          notes=["Kiro: solo instrucciones (steering). Sus hooks post-shell no entregan la salida de forma fiable."]),
+          notes=["Kiro: rules only (steering). Its post-shell hooks do not reliably deliver command output."]),
     Agent("copilot", "GitHub Copilot CLI", ("copilot",), (".copilot",), ".copilot/copilot-instructions.md",
           hooks="copilot"),
     Agent("gemini", "Gemini CLI", ("gemini",), (".gemini",), ".gemini/GEMINI.md", hooks="gemini"),
     Agent("qwen", "Qwen Code", ("qwen",), (".qwen",), ".qwen/QWEN.md", hooks="qwen"),
     Agent("opencode", "OpenCode", ("opencode",), (".config/opencode",), ".config/opencode/AGENTS.md",
-          notes=["OpenCode: si no tenías ~/.config/opencode/AGENTS.md, dejará de usar ~/.claude/CLAUDE.md como "
-                 "respaldo. Añade allí lo que necesites de CLAUDE.md."]),
+          notes=["OpenCode: if you had no ~/.config/opencode/AGENTS.md, it will stop falling back to "
+                 "~/.claude/CLAUDE.md. Copy anything you need from CLAUDE.md into it."]),
     Agent("amp", "Amp", ("amp",), (".config/amp",), ".config/amp/AGENTS.md"),
     Agent("pi", "Pi", ("pi",), (".pi/agent",), ".pi/agent/AGENTS.md"),
     Agent("devin", "Devin Desktop / Windsurf", ("devin", "windsurf"), (".devin", ".codeium/windsurf"),
           ".devin/global_rules.md"),
     Agent("cursor", "Cursor", ("cursor-agent", "cursor"), (".cursor",), None, "ui",
-          notes=["Cursor no tiene un archivo de reglas global: pega `rolehop agent rules` en Settings → Rules. "
-                 "Cursor también ejecuta los hooks de Claude Code si los tienes instalados."]),
+          notes=["Cursor has no global rules file: paste the output of `rolehop agent rules` into Settings → Rules. "
+                 "Cursor also runs Claude Code hooks if you have them installed."]),
 ]}
 
 
@@ -78,8 +82,8 @@ def rules_text() -> str:
 
 
 def rolehop_command() -> str:
-    """Ruta absoluta del ejecutable rolehop (los hooks no siempre heredan el PATH)."""
-    found = shutil.which("rolehop")  # ruta estable del PATH (p. ej. ~/.local/bin/rolehop), sobrevive a reinstalaciones
+    """Absolute path of the rolehop executable (hooks do not always inherit PATH)."""
+    found = shutil.which("rolehop")  # stable PATH location (e.g. ~/.local/bin/rolehop) that survives reinstalls
     if found:
         return str(Path(found).absolute())
     argv0 = Path(sys.argv[0])
@@ -89,7 +93,7 @@ def rolehop_command() -> str:
     return str(local) if local.exists() else "rolehop"
 
 
-# --------------------------------------------------------------------------- utilidades de archivo
+# --------------------------------------------------------------------------- file helpers
 class Changes:
     def __init__(self, dry_run: bool):
         self.dry_run = dry_run
@@ -99,10 +103,10 @@ class Changes:
     def write(self, path: Path, text: str, label: str) -> None:
         target = path.resolve() if path.is_symlink() else path
         if target.exists() and target.read_text(encoding="utf-8") == text:
-            self.lines.append(f"✓ {label}: ya al día ({path})")
+            self.lines.append(f"✓ {label}: already up to date ({path})")
             return
         if self.dry_run:
-            self.lines.append(f"[dry-run] {label}: escribiría {path}")
+            self.lines.append(f"[dry-run] {label}: would write {path}")
             return
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists() and target not in self._backed:
@@ -116,22 +120,23 @@ class Changes:
         if not path.exists():
             return
         if self.dry_run:
-            self.lines.append(f"[dry-run] {label}: borraría {path}")
+            self.lines.append(f"[dry-run] {label}: would remove {path}")
             return
         path.unlink()
-        self.lines.append(f"✓ {label}: borrado {path}")
+        self.lines.append(f"✓ {label}: removed {path}")
 
 
 def _with_block(current: str, body: str) -> str:
     block = f"{MD_BEGIN}\n{body.rstrip()}\n{MD_END}\n"
-    if find_block(current, MD_BEGIN, MD_END):
-        current = _drop(current, *LEGACY_MD)  # si también quedó el bloque antiguo, fuera
-    span = find_block(current, MD_BEGIN, MD_END) or find_block(current, *LEGACY_MD)
+    span = find_any_block(current, ALL_MD)
     if span is not None:
         start, end = span
         if current[end:end + 1] == "\n":
             end += 1
-        return current[:start] + block + current[end:]
+        current = current[:start] + block + current[end:]
+        for begin, end_mark in LEGACY_MD:  # drop any leftover legacy blocks
+            current = _drop(current, begin, end_mark)
+        return current
     sep = "" if not current or current.endswith("\n\n") else ("\n" if current.endswith("\n") else "\n\n")
     return current + sep + block
 
@@ -143,7 +148,9 @@ def _drop(current: str, begin: str, end_mark: str) -> str:
 
 
 def _without_block(current: str) -> str:
-    out = _drop(_drop(current, MD_BEGIN, MD_END), *LEGACY_MD)
+    out = current
+    for begin, end_mark in ALL_MD:
+        out = _drop(out, begin, end_mark)
     if out == current:
         return current
     return out if out.strip() else ""
@@ -155,13 +162,13 @@ def _read_json(path: Path) -> dict:
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return {}
-    data = json.loads(text)  # ValueError si está roto: el llamador avisa y no toca nada
+    data = json.loads(text)  # ValueError if malformed: the caller warns and changes nothing
     if not isinstance(data, dict):
-        raise ValueError("no es un objeto JSON")
+        raise ValueError("not a JSON object")
     return data
 
 
-# --------------------------------------------------------------------------- hooks por agente
+# --------------------------------------------------------------------------- per-agent hooks
 def _hook_cmd(fmt: str) -> str:
     return f"{rolehop_command()} hook post-tool --format {fmt}"
 
@@ -171,10 +178,10 @@ def _is_ours(cmd: str) -> bool:
 
 
 def _merge_nested_hooks(data: dict, event: str, matcher: str | None, command: str, timeout: int = 15) -> dict:
-    """Formato Claude/Codex/Gemini/Qwen: {"hooks": {Evento: [{"matcher":..., "hooks":[{type,command}]}]}}."""
+    """Claude/Codex/Gemini/Qwen format: {"hooks": {Event: [{"matcher":..., "hooks":[{type,command}]}]}}."""
     hooks = data.setdefault("hooks", {})
     groups = [g for g in hooks.get(event, []) if isinstance(g, dict)]
-    for g in groups:  # quitar versiones anteriores nuestras (incluidos los scripts del kit)
+    for g in groups:  # remove our previous versions (including the old kit scripts)
         g["hooks"] = [h for h in g.get("hooks", []) if not _is_ours(str(h.get("command", "")))]
     groups = [g for g in groups if g.get("hooks")]
     entry = {"hooks": [{"type": "command", "command": command, "timeout": timeout}]}
@@ -223,12 +230,12 @@ def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
             "PostToolUseFailure": [{"type": "command", "bash": _hook_cmd("copilot"), "timeoutSec": 15}],
         }}
         ch.write(path, json.dumps(data, indent=2) + "\n", f"{agent.name} hooks")
-        ch.remove(path.with_name("awsorg.json"), f"{agent.name} hooks antiguos (awsorg)")
+        ch.remove(path.with_name("awsorg.json"), f"{agent.name} legacy hooks (awsorg)")
         return
     try:
         data = _read_json(path)
     except ValueError as exc:
-        ch.lines.append(f"✗ {agent.name}: {path} no es JSON válido ({exc}); no toco sus hooks.")
+        ch.lines.append(f"✗ {agent.name}: {path} is not valid JSON ({exc}); leaving its hooks untouched.")
         return
     if fmt == "claude":
         _merge_nested_hooks(data, "PostToolUse", "Bash", _hook_cmd("claude"))
@@ -253,12 +260,12 @@ def uninstall_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     path = _hooks_target(agent, home)
     if agent.hooks == "copilot":
         ch.remove(path, f"{agent.name} hooks")
-        ch.remove(path.with_name("awsorg.json"), f"{agent.name} hooks antiguos (awsorg)")
+        ch.remove(path.with_name("awsorg.json"), f"{agent.name} legacy hooks (awsorg)")
         return
     try:
         data = _read_json(path)
     except ValueError:
-        ch.lines.append(f"✗ {agent.name}: {path} no es JSON válido; no lo toco.")
+        ch.lines.append(f"✗ {agent.name}: {path} is not valid JSON; leaving it untouched.")
         return
     if not data:
         return
@@ -268,18 +275,18 @@ def uninstall_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     ch.write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", f"{agent.name} hooks")
 
 
-# --------------------------------------------------------------------------- instalar / desinstalar
+# --------------------------------------------------------------------------- install / uninstall
 def install(agent: Agent, home: Path, ch: Changes, with_hooks: bool = True) -> None:
     if agent.rules_mode == "ui":
-        ch.lines.append(f"! {agent.name}: sin archivo global de reglas.")
+        ch.lines.append(f"! {agent.name}: no global rules file.")
     else:
         path = home / agent.rules_path
         if agent.rules_mode == "file":
-            ch.write(path, agent.frontmatter + rules_text(), f"{agent.name} instrucciones")
+            ch.write(path, agent.frontmatter + rules_text(), f"{agent.name} rules")
         else:
             target = path.resolve() if path.is_symlink() else path
             current = target.read_text(encoding="utf-8") if target.exists() else ""
-            ch.write(path, _with_block(current, rules_text()), f"{agent.name} instrucciones")
+            ch.write(path, _with_block(current, rules_text()), f"{agent.name} rules")
     if with_hooks and agent.hooks:
         install_hooks(agent, home, ch)
     for note in agent.notes:
@@ -290,13 +297,13 @@ def uninstall(agent: Agent, home: Path, ch: Changes) -> None:
     if agent.rules_path:
         path = home / agent.rules_path
         if agent.rules_mode == "file":
-            ch.remove(path, f"{agent.name} instrucciones")
+            ch.remove(path, f"{agent.name} rules")
         elif path.exists():
             new = _without_block(path.read_text(encoding="utf-8"))
             if new:
-                ch.write(path, new, f"{agent.name} instrucciones")
+                ch.write(path, new, f"{agent.name} rules")
             else:
-                ch.remove(path, f"{agent.name} instrucciones")
+                ch.remove(path, f"{agent.name} rules")
     if agent.hooks:
         uninstall_hooks(agent, home, ch)
 
@@ -307,7 +314,7 @@ def status(agent: Agent, home: Path) -> dict:
         p = home / agent.rules_path
         if p.exists():
             text = p.read_text(encoding="utf-8", errors="replace")
-            installed = agent.rules_mode == "file" or MD_BEGIN in text or LEGACY_MD[0] in text
+            installed = agent.rules_mode == "file" or any(begin in text for begin, _ in ALL_MD)
     return {"agent": agent.key, "name": agent.name, "detected": agent.detected(home), "installed": installed,
             "rules": str(home / agent.rules_path) if agent.rules_path else "(UI)", "hooks": agent.hooks or "-"}
 
@@ -318,6 +325,6 @@ def resolve(names: list[str], use_all: bool, home: Path) -> list[Agent]:
     if names:
         unknown = [n for n in names if n not in AGENTS]
         if unknown:
-            raise KeyError(f"agente desconocido: {', '.join(unknown)}. Disponibles: {', '.join(AGENTS)}")
+            raise KeyError(f"unknown agent: {', '.join(unknown)}. Available: {', '.join(AGENTS)}")
         return [AGENTS[n] for n in names]
     return [a for a in AGENTS.values() if a.detected(home)]

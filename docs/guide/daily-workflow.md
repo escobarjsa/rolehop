@@ -22,14 +22,10 @@ awslogin
 
 ```console
 $ awslogin
-✓ acme: ya tiene sesión (~6h 40m restantes). Usa --force para renovarla.
+✓ acme: already has a session (~6h40m estimated). Use --force to renew it.
 → personal: aws sso login --sso-session personal --use-device-code
-✓ personal: sesión iniciada · cuenta 333333333333
+✓ personal: logged in · account 333333333333
 ```
-
-!!! note "CLI language"
-
-    `rolehop` messages are currently in Spanish. Commands, flags, file formats and exit codes are stable and documented in English here.
 
 One login per organization unlocks **all** of its accounts and roles. Inside the portal session, the AWS CLI and SDKs renew each role's credentials whenever they expire — an Administrator role every hour, a ReadOnly role every eight — and nobody notices.
 

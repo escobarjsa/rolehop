@@ -108,7 +108,7 @@ Generates a profile with `role_arn` and `source_profile`, so the SDK chains it o
 For each organization, `rolehop sync` writes one managed block:
 
 ```ini
-# >>> rolehop:acme (gestionado por rolehop, no editar) >>>
+# >>> rolehop:acme (managed by rolehop, do not edit) >>>
 [sso-session acme]
 sso_start_url = https://acme.awsapps.com/start
 sso_region = us-east-1

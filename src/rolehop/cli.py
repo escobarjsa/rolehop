@@ -1,22 +1,22 @@
-"""rolehop: perfiles AWS IAM Identity Center declarativos para N organizaciones.
+"""rolehop: declarative AWS IAM Identity Center profiles for any number of organizations.
 
-Genera perfiles nativos `sso-session` en ~/.aws/config a partir de orgs.toml. Login y renovación los hace
-el AWS CLI o los SDK: rolehop nunca escribe tokens ni claves.
+Generates native `sso-session` profiles in ~/.aws/config from orgs.toml. Login and token refresh are handled
+by the AWS CLI and SDKs: rolehop never writes tokens or keys.
 
-Subcomandos:
-  setup                        todo en uno: PATH, asistente si falta config, perfiles y agentes de IA
-  init                         asistente: organizaciones, descubrimiento de cuentas y roles, orgs.toml
-  sync [--dry-run] [--prune]   escribe los bloques gestionados en ~/.aws/config
-  login [org ...] [--force]    aws sso login solo donde haga falta (también: awslogin)
-  status [org ...] [--json]    estado de sesión por org
-  list [--json] [--org ORG]    catálogo de perfiles disponibles
-  run [--login] [--max 6h] [-- CMD]   comprueba la sesión antes de dejar trabajando a un agente
-  agent list|install|uninstall|rules  instrucciones y hooks para agentes de IA
-  envrc PERFIL [--state P]     imprime un .envrc para direnv
-  discover ORG                 lista cuentas y roles reales de una org (requiere sesión)
+Subcommands:
+  setup                        all-in-one: PATH, wizard if no config, profiles and AI agents
+  init                         wizard: organizations, account and role discovery, orgs.toml
+  sync [--dry-run] [--prune]   write the managed blocks to ~/.aws/config
+  login [org ...] [--force]    run aws sso login only where needed (also: awslogin)
+  status [org ...] [--json]    session status per org
+  list [--json] [--org ORG]    catalog of available profiles
+  run [--login] [--max 6h] [-- CMD]   check the session before leaving an agent to work
+  agent list|install|uninstall|rules  instructions and hooks for AI agents
+  envrc PROFILE [--state P]    print an .envrc for direnv
+  discover ORG                 list an org's actual accounts and roles (requires a session)
 
-Configuración: $ROLEHOP_CONFIG o ~/.config/rolehop/orgs.toml
-Destino:       $AWS_CONFIG_FILE o ~/.aws/config
+Config: $ROLEHOP_CONFIG or ~/.config/rolehop/orgs.toml
+Target: $AWS_CONFIG_FILE or ~/.aws/config
 """
 from __future__ import annotations
 
@@ -31,17 +31,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-if sys.version_info < (3, 11):  # noqa: UP036 — mensaje claro si se ejecuta con un Python antiguo
-    sys.exit("rolehop necesita Python 3.11 o superior (por tomllib).")
+if sys.version_info < (3, 11):  # noqa: UP036 — clear message when run on an old Python
+    sys.exit("rolehop requires Python 3.11 or later (for tomllib).")
 import tomllib  # noqa: E402
 
 from rolehop import __version__ as VERSION  # noqa: E402
 HOME = Path.home()
-LEGACY_NAME = "awsorg"  # nombre anterior de la herramienta (hasta 1.2.0): se reconocen sus archivos y marcadores
+LEGACY_NAME = "awsorg"  # the tool's former name (up to 1.2.0): its files and markers are still recognized
 
 
 def _env(name: str) -> str | None:
-    """Variable ROLEHOP_<name>, o la antigua AWSORG_<name> si no está definida."""
+    """Return ROLEHOP_<name>, falling back to the legacy AWSORG_<name>."""
     return os.environ.get(f"ROLEHOP_{name}") or os.environ.get(f"{LEGACY_NAME.upper()}_{name}") or None
 
 
@@ -50,29 +50,29 @@ LEGACY_CONFIG_PATH = HOME / f".config/{LEGACY_NAME}/orgs.toml"
 AWS_CONFIG = Path(os.environ.get("AWS_CONFIG_FILE") or HOME / ".aws/config")
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "rolehop"
 LEGACY_STATE_DIR = STATE_DIR.with_name(LEGACY_NAME)
-MARK_NAMES = f"(?:rolehop|{LEGACY_NAME})"  # marcadores de bloque aceptados al leer ~/.aws/config
+MARK_NAMES = f"(?:rolehop|{LEGACY_NAME})"  # block marker names accepted when reading ~/.aws/config
 
 
 def migrate_legacy() -> list[str]:
-    """Copia orgs.toml y el estado de awsorg a las rutas de rolehop si aún no existen. No borra nada."""
+    """Copy awsorg's orgs.toml and state to the rolehop paths if they don't exist yet. Never deletes anything."""
     msgs = []
     if not _env("CONFIG") and not CONFIG_PATH.exists() and LEGACY_CONFIG_PATH.is_file():
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(LEGACY_CONFIG_PATH, CONFIG_PATH)
         os.chmod(CONFIG_PATH, 0o600)
-        msgs.append(f"✓ migrado {LEGACY_CONFIG_PATH} → {CONFIG_PATH} (el original se conserva)")
+        msgs.append(f"✓ migrated {LEGACY_CONFIG_PATH} → {CONFIG_PATH} (original kept)")
     if not STATE_DIR.exists() and LEGACY_STATE_DIR.is_dir():
         shutil.copytree(LEGACY_STATE_DIR, STATE_DIR)
-        msgs.append(f"✓ migrado el estado de {LEGACY_STATE_DIR} → {STATE_DIR}")
+        msgs.append(f"✓ migrated state from {LEGACY_STATE_DIR} → {STATE_DIR}")
     return msgs
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-# Mensajes reales de AWS CLI / botocore / aws-sdk-go-v2 cuando la sesión SSO terminó.
+# Actual AWS CLI / botocore / aws-sdk-go-v2 messages when the SSO session has ended.
 EXPIRED_RE = re.compile(
     r"Error when retrieving token from sso|The SSO session associated with this profile has expired"
     r"|UnauthorizedSSOToken|Token has expired and refresh failed|refresh cached SSO token failed"
     r"|InvalidGrantException|SSO session.{0,40}(has expired|is invalid)|Error loading SSO Token"
     r"|ExpiredToken")
-# Valores que se escriben en ~/.aws/config: sin espacios, saltos de línea, corchetes ni comentarios.
+# Values written to ~/.aws/config: no whitespace, newlines, brackets or comment characters.
 VAL_RE = re.compile(r"^[^\s\[\]#;]+$")
 URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(:\d+)?(/[^\s\[\]#;]*)?$")
 REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
@@ -80,7 +80,8 @@ ARN_RE = re.compile(r"^arn:aws[\w-]*:iam::\d{12}:role/[\w+=,.@/-]+$")
 
 
 def begin_marker(org: str) -> str:
-    return f"# >>> rolehop:{org} (gestionado por rolehop, no editar) >>>"
+    # split_blocks accepts any text between "rolehop:<org> " and ">>>", so older (Spanish) markers still match.
+    return f"# >>> rolehop:{org} (managed by rolehop, do not edit) >>>"
 
 
 def end_marker(org: str) -> str:
@@ -93,28 +94,29 @@ class ConfigError(Exception):
 
 
 def load_orgs(path: Path = CONFIG_PATH) -> list[dict]:
+    """Load and validate orgs.toml, filling in defaults. Raise ConfigError on any problem."""
     if not path.exists():
-        raise ConfigError(f"No existe {path}. Copia orgs.example.toml ahí y edítalo.")
+        raise ConfigError(f"{path} not found. Copy orgs.example.toml there and edit it.")
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path} no es TOML válido: {exc}") from None
+        raise ConfigError(f"{path} is not valid TOML: {exc}") from None
     orgs = data.get("org", [])
     if not orgs:
-        raise ConfigError(f"{path} no define ningún [[org]].")
+        raise ConfigError(f"{path} does not define any [[org]].")
     seen = set()
     for org in orgs:
         if not isinstance(org, dict):
-            raise ConfigError("Cada [[org]] debe ser una tabla.")
+            raise ConfigError("Each [[org]] must be a table.")
         for key in ("name", "start_url", "sso_region"):
             if not isinstance(org.get(key), str) or not org.get(key):
-                raise ConfigError(f"Una org no tiene '{key}' (texto entre comillas).")
+                raise ConfigError(f"An org is missing '{key}' (a quoted string).")
         name = org["name"]
         if not NAME_RE.match(name):
-            raise ConfigError(f"Nombre de org inválido: {name!r} (minúsculas, números, - o _).")
+            raise ConfigError(f"Invalid org name: {name!r} (use lowercase letters, digits, - or _).")
         if name in seen:
-            raise ConfigError(f"Org repetida: {name}")
+            raise ConfigError(f"Duplicate org: {name}")
         seen.add(name)
         org.setdefault("region", org["sso_region"])
         org.setdefault("login_flow", "device")
@@ -123,79 +125,81 @@ def load_orgs(path: Path = CONFIG_PATH) -> list[dict]:
         org.setdefault("accounts", [])
         org.setdefault("assume_roles", [])
         if not URL_RE.match(org["start_url"]):
-            raise ConfigError(f"[{name}] start_url inválida: {org['start_url']!r} (https://<algo>.awsapps.com/start)")
+            raise ConfigError(f"[{name}] invalid start_url: {org['start_url']!r} (expected https://<name>.awsapps.com/start)")
         for key in ("sso_region", "region"):
             if not isinstance(org[key], str) or not REGION_RE.match(org[key]):
-                raise ConfigError(f"[{name}] {key} inválida: {org[key]!r} (p. ej. us-east-1)")
+                raise ConfigError(f"[{name}] invalid {key}: {org[key]!r} (e.g. us-east-1)")
         if org["login_flow"] not in ("device", "pkce"):
-            raise ConfigError(f"[{name}] login_flow debe ser \"device\" o \"pkce\".")
+            raise ConfigError(f"[{name}] login_flow must be \"device\" or \"pkce\".")
         if not isinstance(org["portal_session_hours"], (int, float)) or org["portal_session_hours"] <= 0:
-            raise ConfigError(f"[{name}] portal_session_hours debe ser un número de horas.")
+            raise ConfigError(f"[{name}] portal_session_hours must be a number of hours.")
         if not isinstance(org["roles"], dict):
-            raise ConfigError(f"[{name}] [org.roles] debe ser una tabla (alias = \"PermissionSet\").")
+            raise ConfigError(f"[{name}] [org.roles] must be a table (alias = \"PermissionSet\").")
         for alias, ps in org["roles"].items():
             if not NAME_RE.match(alias) or not isinstance(ps, str) or not VAL_RE.match(ps):
-                raise ConfigError(f"[{name}] rol inválido en [org.roles]: {alias} = {ps!r}")
+                raise ConfigError(f"[{name}] invalid role in [org.roles]: {alias} = {ps!r}")
         if not isinstance(org["accounts"], list) or not isinstance(org["assume_roles"], list):
-            raise ConfigError(f"[{name}] accounts/assume_roles deben ser listas de tablas.")
+            raise ConfigError(f"[{name}] accounts and assume_roles must be arrays of tables.")
         for acc in org["accounts"]:
             if not isinstance(acc, dict) or not acc.get("name") or not acc.get("id"):
-                raise ConfigError(f"[{name}] cada cuenta necesita 'name' e 'id'.")
+                raise ConfigError(f"[{name}] each account needs 'name' and 'id'.")
             if not isinstance(acc["name"], str) or not NAME_RE.match(acc["name"]):
-                raise ConfigError(f"[{name}] nombre de cuenta inválido: {acc['name']!r} (texto: minúsculas, números, - o _)")
+                raise ConfigError(f"[{name}] invalid account name: {acc['name']!r} "
+                                  "(a string of lowercase letters, digits, - or _)")
             if not re.fullmatch(r"\d{12}", str(acc["id"])):
-                raise ConfigError(f"[{name}] id de cuenta inválido para {acc['name']}: {acc['id']!r} (12 dígitos)")
+                raise ConfigError(f"[{name}] invalid account id for {acc['name']}: {acc['id']!r} (must be 12 digits)")
             acc["id"] = str(acc["id"])
             if not isinstance(acc.get("roles"), list) or not acc["roles"]:
-                raise ConfigError(f"[{name}] roles de la cuenta {acc['name']} debe ser una lista, p. ej. [\"admin\"].")
+                raise ConfigError(f"[{name}] roles for account {acc['name']} must be a list, e.g. [\"admin\"].")
             for role in acc["roles"]:
                 if not isinstance(role, str) or not VAL_RE.match(role):
-                    raise ConfigError(f"[{name}] rol inválido en la cuenta {acc['name']}: {role!r}")
+                    raise ConfigError(f"[{name}] invalid role in account {acc['name']}: {role!r}")
             if "region" in acc and (not isinstance(acc["region"], str) or not REGION_RE.match(acc["region"])):
-                raise ConfigError(f"[{name}] region inválida en la cuenta {acc['name']}: {acc['region']!r}")
+                raise ConfigError(f"[{name}] invalid region in account {acc['name']}: {acc['region']!r}")
         sources = {f"{a['name']}-{k}" for a in org["accounts"] for k, _ in role_pairs(org, a)}
         for ar in org["assume_roles"]:
             for k in ("name", "role_arn", "source"):
                 if not isinstance(ar, dict) or not isinstance(ar.get(k), str) or not ar.get(k):
-                    raise ConfigError(f"[{name}] cada [[org.assume_roles]] necesita '{k}'.")
+                    raise ConfigError(f"[{name}] each [[org.assume_roles]] needs '{k}'.")
             if not NAME_RE.match(ar["name"]):
-                raise ConfigError(f"[{name}] nombre inválido en assume_roles: {ar['name']!r}")
+                raise ConfigError(f"[{name}] invalid name in assume_roles: {ar['name']!r}")
             if not ARN_RE.match(ar["role_arn"]):
-                raise ConfigError(f"[{name}] role_arn inválido: {ar['role_arn']!r}")
+                raise ConfigError(f"[{name}] invalid role_arn: {ar['role_arn']!r}")
             if ar["source"] not in sources:
-                raise ConfigError(f"[{name}] source inexistente en assume_roles: {ar['source']!r} "
-                                  f"(válidos: {', '.join(sorted(sources))})")
+                raise ConfigError(f"[{name}] unknown source in assume_roles: {ar['source']!r} "
+                                  f"(valid: {', '.join(sorted(sources))})")
             if "external_id" in ar and (not isinstance(ar["external_id"], str) or not VAL_RE.match(ar["external_id"])):
-                raise ConfigError(f"[{name}] external_id inválido en assume_roles {ar['name']}")
+                raise ConfigError(f"[{name}] invalid external_id in assume_roles {ar['name']}")
             if "duration_seconds" in ar and not isinstance(ar["duration_seconds"], int):
-                raise ConfigError(f"[{name}] duration_seconds debe ser un número entero")
+                raise ConfigError(f"[{name}] duration_seconds must be an integer")
     for org in orgs:
         pp = org.get("probe_profile")
         if pp and pp not in {r["profile"] for r in catalog([org])}:
-            raise ConfigError(f"[{org['name']}] probe_profile {pp!r} no existe entre los perfiles de esa org.")
+            raise ConfigError(f"[{org['name']}] probe_profile {pp!r} is not one of this org's profiles.")
     from collections import Counter
     dups = sorted(p for p, c in Counter(r["profile"] for r in catalog(orgs)).items() if c > 1)
     if dups:
-        raise ConfigError(f"Perfiles duplicados: {', '.join(dups)}. Revisa cuentas o roles repetidos en orgs.toml.")
+        raise ConfigError(f"Duplicate profiles: {', '.join(dups)}. Check orgs.toml for repeated accounts or roles.")
     return orgs
 
 
 def role_pairs(org: dict, acc: dict) -> list[tuple[str, str]]:
-    """Devuelve [(clave_corta, nombre_permission_set)] para una cuenta."""
+    """Return [(short_key, permission_set_name)] for an account."""
     pairs = []
     reverse = {ps: alias for alias, ps in org["roles"].items()}
     for role in acc["roles"]:
         if role in org["roles"]:
             pairs.append((role, org["roles"][role]))
-        elif role in reverse:  # nombre directo que coincide con un alias → usar el alias
+        elif role in reverse:  # a permission set name that matches an alias → use the alias
             pairs.append((reverse[role], role))
-        else:  # nombre directo del permission set
+        else:  # a raw permission set name
             key = re.sub(r"[^a-z0-9]+", "-", role.lower()).strip("-")
             pairs.append((key, role))
     return pairs
 
 
 def catalog(orgs: list[dict]) -> list[dict]:
+    """Return one row per generated profile across all orgs."""
     rows = []
     for org in orgs:
         for acc in org["accounts"]:
@@ -211,13 +215,14 @@ def catalog(orgs: list[dict]) -> list[dict]:
                 "profile": f"{org['name']}-{ar['name']}", "org": org["name"],
                 "account": ar.get("account", ""), "account_id": ar["role_arn"].split(":")[4],
                 "role": ar["role_arn"].split("/")[-1], "permission_set": "",
-                "type": f"assume-role (desde {org['name']}-{ar['source']})",
+                "type": f"assume-role (from {org['name']}-{ar['source']})",
                 "region": ar.get("region", org["region"]),
             })
     return rows
 
 
 def probe_profile(org: dict) -> str | None:
+    """Pick the profile used to check an org's session: probe_profile, then default_role, then the first one."""
     if org.get("probe_profile"):
         return org["probe_profile"]
     default = org.get("default_role")
@@ -234,6 +239,7 @@ def probe_profile(org: dict) -> str | None:
 
 # --------------------------------------------------------------------------- render
 def render_block(org: dict) -> str:
+    """Render an org's managed block (sso-session plus profiles) for ~/.aws/config."""
     n = org["name"]
     out = [begin_marker(n), f"[sso-session {n}]",
            f"sso_start_url = {org['start_url']}",
@@ -264,7 +270,7 @@ def render_block(org: dict) -> str:
 
 
 def split_blocks(text: str) -> tuple[str, dict[str, str]]:
-    """Separa el archivo en texto libre (con marcadores de posición) y bloques gestionados."""
+    """Split the file into free text (with placeholders) and managed blocks."""
     blocks: dict[str, str] = {}
     pattern = re.compile(
         rf"^# >>> {MARK_NAMES}:(?P<org>[a-z0-9_-]+) .*?>>>\n(?P<body>.*?)^# <<< {MARK_NAMES}:(?P=org) <<<\n?",
@@ -272,18 +278,18 @@ def split_blocks(text: str) -> tuple[str, dict[str, str]]:
 
     def repl(m: re.Match) -> str:
         if m["org"] in blocks:
-            raise ConfigError(f"El bloque rolehop:{m['org']} aparece dos veces en {AWS_CONFIG}. "
-                              f"Deja uno solo (haz copia antes) y repite.")
+            raise ConfigError(f"Block rolehop:{m['org']} appears twice in {AWS_CONFIG}. "
+                              f"Keep only one (back up the file first) and try again.")
         blocks[m["org"]] = m.group(0).rstrip("\n")
         return f"\0ROLEHOP:{m['org']}\0\n"
 
     if "\0" in text:
-        raise ConfigError(f"{AWS_CONFIG} contiene bytes nulos: revísalo o restaura una copia .bak.")
+        raise ConfigError(f"{AWS_CONFIG} contains null bytes: check it or restore a .bak backup.")
     free = pattern.sub(repl, text)
     leftover = re.findall(rf"^# (?:>>>|<<<) {MARK_NAMES}:([a-z0-9_-]+)", free, re.M)
     if leftover:
-        raise ConfigError(f"Marcadores de rolehop incompletos o manipulados para: {', '.join(sorted(set(leftover)))} "
-                          f"en {AWS_CONFIG}. Corrige o borra ese bloque a mano (haz copia antes).")
+        raise ConfigError(f"Incomplete or tampered rolehop markers for: {', '.join(sorted(set(leftover)))} "
+                          f"in {AWS_CONFIG}. Fix or remove that block by hand (back up the file first).")
     return free, blocks
 
 
@@ -292,7 +298,7 @@ SSO_SESSION_RE = re.compile(r"^\[sso-session\s+(?P<name>[^\]]+?)\]\s*$", re.M)
 
 
 def conflicts(free_text: str, org: dict) -> list[str]:
-    """Secciones fuera de bloques gestionados que chocarían con las generadas."""
+    """Return sections outside managed blocks that would clash with the generated ones."""
     clean = re.sub(r"\0ROLEHOP:[^\0]+\0", "", free_text)
     existing_profiles = {m["name"].strip() for m in SECTION_RE.finditer(clean)
                          if not m.group(0).startswith("[sso-session")}
@@ -306,8 +312,11 @@ def conflicts(free_text: str, org: dict) -> list[str]:
 
 # --------------------------------------------------------------------------- sync
 def drop_placeholder(text: str, token: str) -> str:
-    """Quita el marcador de posición de un bloque. Solo absorbe la línea EN BLANCO que lo separaba (nunca el
-    salto de línea de la línea anterior del usuario, para no pegarle la sección siguiente)."""
+    """Remove a block's placeholder.
+
+    Only the BLANK line that separated it is absorbed, never the newline ending the user's previous line,
+    so the following section is not glued onto it.
+    """
     i = text.find(token)
     if i < 0:
         return text
@@ -321,9 +330,9 @@ def drop_placeholder(text: str, token: str) -> str:
 
 def plan_sync(orgs: list[dict], current: str, prune: bool = False,
               prune_only: set[str] | frozenset[str] = frozenset()) -> tuple[str | None, list[str], dict]:
-    """Calcula el nuevo ~/.aws/config sin escribir nada. Devuelve (texto, bloques huérfanos conservados, conflictos).
+    """Compute the new ~/.aws/config without writing anything. Return (text, kept orphan blocks, conflicts).
 
-    Con conflictos el texto es None. Lanza ConfigError si los marcadores están rotos o el resultado no es INI válido.
+    If there are conflicts, text is None. Raise ConfigError if the markers are broken or the result is not valid INI.
     """
     free, blocks = split_blocks(current)
     problems = {o["name"]: c for o in orgs if (c := conflicts(free, o))}
@@ -351,12 +360,12 @@ def plan_sync(orgs: list[dict], current: str, prune: bool = False,
             new_free = new_free.replace(token, blocks[name] + "\n", 1)
             kept.append(name)
     if "\0" in new_free:
-        raise ConfigError("error interno: el resultado contiene marcadores sin resolver. No se escribió nada.")
+        raise ConfigError("internal error: the result contains unresolved placeholders. Nothing was written.")
     import configparser
     try:
         configparser.RawConfigParser(strict=True, interpolation=None).read_string(new_free)
     except configparser.Error as exc:
-        raise ConfigError(f"el resultado no sería un ~/.aws/config válido; no se escribió nada: {exc}") from None
+        raise ConfigError(f"the result would not be a valid ~/.aws/config; nothing was written: {exc}") from None
     return new_free, kept, {}
 
 
@@ -365,43 +374,43 @@ def cmd_sync(args) -> int:
     current = AWS_CONFIG.read_text() if AWS_CONFIG.exists() else ""
     new_free, kept, problems = plan_sync(orgs, current, args.prune, set(getattr(args, "prune_only", None) or []))
     if problems:
-        print("✗ Hay secciones en tu config, fuera de los bloques de rolehop, que chocan con perfiles generados:",
+        print("✗ Some sections in your config, outside the rolehop blocks, conflict with generated profiles:",
               file=sys.stderr)
         for org, items in problems.items():
             for it in items:
                 print(f"    [{org}] {it}", file=sys.stderr)
-        print("  Renómbralas o bórralas a mano (haz copia antes) y vuelve a ejecutar `rolehop sync`.",
+        print("  Rename or remove them by hand (back up the file first), then run `rolehop sync` again.",
               file=sys.stderr)
         return 2
     assert new_free is not None
     if kept:
-        print(f"! Bloques de orgs que ya no están en orgs.toml (se conservan; usa --prune para quitarlos): "
+        print(f"! Blocks for orgs no longer in orgs.toml (kept; use --prune to remove them): "
               f"{', '.join(kept)}")
     total = sum(len(catalog([o])) for o in orgs)
     if new_free == current:
-        print(f"✓ {AWS_CONFIG} ya está al día ({total} perfiles).")
+        print(f"✓ {AWS_CONFIG} already up to date ({total} profile(s)).")
         return 0
     if not args.quiet:
         diff = difflib.unified_diff(current.splitlines(True), new_free.splitlines(True),
-                                    fromfile=str(AWS_CONFIG), tofile=f"{AWS_CONFIG} (nuevo)")
+                                    fromfile=str(AWS_CONFIG), tofile=f"{AWS_CONFIG} (new)")
         sys.stdout.writelines(diff)
     if args.dry_run:
-        print("\n(dry-run: no se escribió nada)")
+        print("\n(dry run: nothing was written)")
         return 0
     write_aws_config(new_free)
-    print(f"✓ {AWS_CONFIG} actualizado: {total} perfiles en {len(orgs)} org(s).")
+    print(f"✓ {AWS_CONFIG} updated: {total} profile(s) in {len(orgs)} org(s).")
     return 0
 
 
 def write_aws_config(text: str) -> None:
-    """Escribe ~/.aws/config de forma atómica (0600, fsync), con copia de seguridad y respetando symlinks."""
+    """Write ~/.aws/config atomically (0600, fsync), with a backup, following symlinks."""
     target = AWS_CONFIG.resolve() if AWS_CONFIG.is_symlink() else AWS_CONFIG
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     if target.exists():
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
         os.chmod(backup, 0o600)
-        print(f"\n✓ Copia de seguridad: {backup}")
+        print(f"\n✓ Backup: {backup}")
     tmp = target.with_name(target.name + ".rolehop-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
@@ -430,30 +439,31 @@ def write_state(org: str, **values) -> None:
 
 
 def check_org(org: dict) -> dict:
+    """Check an org's session with `aws sts get-caller-identity` on its probe profile."""
     prof = probe_profile(org)
     res = {"org": org["name"], "probe_profile": prof, "ok": False, "expired": False,
            "account": None, "arn": None, "error": None}
     if not prof:
-        res["error"] = "sin perfiles definidos"
+        res["error"] = "no profiles defined"
         return res
     try:
         p = subprocess.run(["aws", "sts", "get-caller-identity", "--profile", prof, "--output", "json"],
                            capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
-        res["error"] = "no se encontró el comando aws"
+        res["error"] = "aws command not found"
         return res
     except subprocess.TimeoutExpired:
-        res["error"] = "tiempo agotado consultando STS"
+        res["error"] = "timed out calling STS"
         return res
     if p.returncode == 0:
         try:
             info = json.loads(p.stdout)
             res.update(ok=True, account=info.get("Account"), arn=info.get("Arn"))
         except ValueError:
-            res["error"] = "respuesta inesperada de aws sts (no es JSON)"
+            res["error"] = "unexpected response from aws sts (not JSON)"
     else:
         err = (p.stderr or p.stdout).strip().splitlines()
-        msg = next((line for line in err if line.strip()), "error desconocido")
+        msg = next((line for line in err if line.strip()), "unknown error")
         res["error"] = msg[:200]
         res["expired"] = bool(EXPIRED_RE.search(p.stderr or ""))
     st = read_state(org["name"])
@@ -466,27 +476,28 @@ def check_org(org: dict) -> dict:
         except (TypeError, ValueError):
             pass
     res["blocked"] = bool(st.get("blocked"))
-    if res["blocked"]:  # el hook vio la sesión expirada: no confiar en credenciales de rol en caché
+    if res["blocked"]:  # a hook saw the session expire: don't trust cached role credentials
         res["ok"] = False
         res["expired"] = True
-        res["error"] = res["error"] or "sesión expirada (detectada en un comando reciente)"
+        res["error"] = res["error"] or "session expired (detected by a recent command)"
     return res
 
 
 def select(orgs: list[dict], names: list[str]) -> list[dict]:
+    """Return the named orgs (all of them if names is empty). Raise ConfigError on unknown names."""
     if not names:
         return orgs
     by = {o["name"]: o for o in orgs}
     missing = [n for n in names if n not in by]
     if missing:
-        raise ConfigError(f"Org desconocida: {', '.join(missing)}. Disponibles: {', '.join(by)}")
+        raise ConfigError(f"Unknown org: {', '.join(missing)}. Available: {', '.join(by)}")
     return [by[n] for n in names]
 
 
 def fmt_left(minutes: int | None) -> str:
     if minutes is None:
-        return "sin dato de login"
-    return f"~{minutes // 60}h{minutes % 60:02d}m estimado"
+        return "no login data"
+    return f"~{minutes // 60}h{minutes % 60:02d}m estimated"
 
 
 def cmd_status(args) -> int:
@@ -497,13 +508,13 @@ def cmd_status(args) -> int:
     else:
         for r in results:
             if r["ok"]:
-                print(f"✓ {r['org']:<12} sesión activa · cuenta {r['account']} · "
-                      f"{fmt_left(r.get('estimated_left_min'))} · probado con {r['probe_profile']}")
+                print(f"✓ {r['org']:<12} active session · account {r['account']} · "
+                      f"{fmt_left(r.get('estimated_left_min'))} · checked with {r['probe_profile']}")
             else:
-                hint = f"ejecuta: awslogin {r['org']}" if r["expired"] else r["error"]
-                print(f"✗ {r['org']:<12} sin sesión · {hint}")
+                hint = f"run: awslogin {r['org']}" if r["expired"] else r["error"]
+                print(f"✗ {r['org']:<12} no session · {hint}")
         if any(r["ok"] for r in results):
-            print("  (Credenciales del rol en caché pueden dar ✓ aunque la sesión del portal haya terminado.)")
+            print("  (Cached role credentials can show ✓ even after the portal session has ended.)")
     return 0 if all(r["ok"] for r in results) else 1
 
 
@@ -511,13 +522,13 @@ def cmd_login(args) -> int:
     orgs = select(load_orgs(), args.orgs)
     rc = 0
     if not shutil.which("aws"):
-        raise ConfigError("no se encontró el comando aws (instala AWS CLI v2).")
+        raise ConfigError("aws command not found (install AWS CLI v2).")
     for org in orgs:
         if not args.force and not read_state(org["name"]).get("blocked"):
             r = check_org(org)
             if r["ok"]:
-                print(f"✓ {org['name']}: ya tiene sesión ({fmt_left(r.get('estimated_left_min'))}). "
-                      f"Usa --force para renovarla.")
+                print(f"✓ {org['name']}: already has a session ({fmt_left(r.get('estimated_left_min'))}). "
+                      f"Use --force to renew it.")
                 continue
         device = args.device or org["login_flow"] == "device"
         cmd = ["aws", "sso", "login", "--sso-session", org["name"]]
@@ -528,9 +539,9 @@ def cmd_login(args) -> int:
         if p.returncode == 0:
             write_state(org["name"], last_login=dt.datetime.now(dt.UTC).isoformat(), blocked=False)
             r = check_org(org)
-            print(f"✓ {org['name']}: sesión iniciada" + (f" · cuenta {r['account']}" if r["ok"] else ""))
+            print(f"✓ {org['name']}: logged in" + (f" · account {r['account']}" if r["ok"] else ""))
         else:
-            print(f"✗ {org['name']}: el login falló (código {p.returncode}).", file=sys.stderr)
+            print(f"✗ {org['name']}: login failed (exit code {p.returncode}).", file=sys.stderr)
             rc = 1
     return rc
 
@@ -545,12 +556,12 @@ def cmd_list(args) -> int:
         print(json.dumps(rows, indent=2))
         return 0
     if not rows:
-        print("No hay perfiles definidos.")
+        print("No profiles defined.")
         return 0
-    w = max(len(r["profile"]) for r in rows)
+    w = max([7] + [len(r["profile"]) for r in rows])
     wo = max([3] + [len(r["org"]) for r in rows])
-    wa = max([6] + [len(r["account"]) for r in rows])
-    print(f"{'PERFIL':<{w}}  {'ORG':<{wo}}  {'CUENTA':<{wa}}  {'ID':<12}  ROL")
+    wa = max([7] + [len(r["account"]) for r in rows])
+    print(f"{'PROFILE':<{w}}  {'ORG':<{wo}}  {'ACCOUNT':<{wa}}  {'ID':<12}  ROLE")
     for r in rows:
         role = r["permission_set"] or r["role"]
         extra = "" if r["type"] == "sso" else f"  [{r['type']}]"
@@ -560,15 +571,15 @@ def cmd_list(args) -> int:
 
 def cmd_envrc(args) -> int:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", args.state_var):
-        print(f"✗ Nombre de variable inválido: {args.state_var}", file=sys.stderr)
+        print(f"✗ Invalid variable name: {args.state_var}", file=sys.stderr)
         return 2
     names = {r["profile"] for r in catalog(load_orgs())}
     for p in [args.profile] + ([args.state] if args.state else []):
         if p not in names:
-            print(f"✗ Perfil desconocido: {p}. Mira `rolehop list`.", file=sys.stderr)
+            print(f"✗ Unknown profile: {p}. See `rolehop list`.", file=sys.stderr)
             return 2
-    print("# .envrc generado por rolehop: perfil AWS por defecto de este repo.")
-    print("# La IA puede usar otro perfil anteponiendo AWS_PROFILE=<perfil> a un comando.")
+    print("# .envrc generated by rolehop: default AWS profile for this repo.")
+    print("# AI agents can use another profile by prefixing a command with AWS_PROFILE=<profile>.")
     print(f"export AWS_PROFILE={args.profile}")
     if args.state:
         print(f"export {args.state_var}={args.state}")
@@ -585,20 +596,20 @@ class PortalError(Exception):
 
 
 def _cached_token(session_name: str) -> str:
-    """Token de acceso SSO del caché del AWS CLI para un sso-session. Solo en memoria; nunca se imprime."""
+    """Return the SSO access token for an sso-session from the AWS CLI cache. Kept in memory only; never printed."""
     import hashlib
     path = SSO_CACHE / (hashlib.sha1(session_name.encode(), usedforsecurity=False).hexdigest() + ".json")
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
-        raise PortalError(f"no hay sesión iniciada para '{session_name}' (ejecuta awslogin {session_name})") from None
+        raise PortalError(f"no active session for '{session_name}' (run: awslogin {session_name})") from None
     token, expires = data.get("accessToken"), data.get("expiresAt", "")
     if not token:
-        raise PortalError(f"caché SSO sin token para '{session_name}'")
+        raise PortalError(f"SSO cache has no token for '{session_name}'")
     try:
         exp = dt.datetime.fromisoformat(expires.replace("Z", "+00:00").replace("UTC", "+00:00"))
         if exp <= dt.datetime.now(dt.UTC):
-            raise PortalError(f"el token de '{session_name}' expiró (ejecuta awslogin {session_name})")
+            raise PortalError(f"the token for '{session_name}' has expired (run: awslogin {session_name})")
     except ValueError:
         pass
     return token
@@ -612,18 +623,18 @@ def _portal_get(region: str, path: str, token: str, params: dict) -> dict:
     url = f"{base}{path}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"x-amz-sso_bearer_token": token, "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 (URL fija de AWS)
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 (fixed AWS URL)
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise PortalError("el portal rechazó el token (sesión expirada): ejecuta awslogin") from None
-        raise PortalError(f"error HTTP {exc.code} del portal SSO") from None
+            raise PortalError("the portal rejected the token (session expired); run: awslogin") from None
+        raise PortalError(f"HTTP error {exc.code} from the SSO portal") from None
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        raise PortalError(f"no se pudo contactar el portal SSO: {exc}") from None
+        raise PortalError(f"could not reach the SSO portal: {exc}") from None
 
 
 def portal_inventory(session_name: str, region: str) -> list[dict]:
-    """[{id, name, roles:[...]}] de todas las cuentas y roles visibles para el usuario."""
+    """Return [{id, name, roles: [...]}] for every account and role visible to the user."""
     token = _cached_token(session_name)
     accounts, nxt = [], None
     while True:
@@ -648,7 +659,7 @@ def portal_inventory(session_name: str, region: str) -> list[dict]:
 
 
 def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "cuenta"
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "account"
 
 
 def role_alias(ps_name: str) -> str:
@@ -677,21 +688,22 @@ def cmd_discover(args) -> int:
     except PortalError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
-    print(f"# Cuentas y roles visibles en {org['name']} ({len(inv)}). Pégalo en orgs.toml y ajusta los nombres.")
+    print(f"# Accounts and roles visible in {org['name']} ({len(inv)}). Paste into orgs.toml and adjust the names.")
     for acc in inv:
         print(f'[[org.accounts]]\nname = "{short_account_name(acc["name"], org["name"])}"   # {acc["name"]}\n'
               f'id = "{acc["id"]}"\nroles = {json.dumps(acc["roles"])}\n')
     return 0
 
 
-# --------------------------------------------------------------------------- asistente (init)
-def _ask(prompt: str, default: str | None = None, validate=None, error: str = "valor inválido") -> str:
+# --------------------------------------------------------------------------- wizard (init)
+def _ask(prompt: str, default: str | None = None, validate=None, error: str = "invalid value") -> str:
+    """Prompt until the answer passes validate; an empty answer takes the default."""
     while True:
         suffix = f" [{default}]" if default not in (None, "") else ""
         try:
             val = input(f"  {prompt}{suffix}: ").strip()
         except EOFError:
-            raise ConfigError("entrada cerrada: ejecuta el asistente en una terminal interactiva") from None
+            raise ConfigError("input closed: run the wizard in an interactive terminal") from None
         if not val and default is not None:
             val = default
         if val and (validate is None or validate(val)):
@@ -700,19 +712,21 @@ def _ask(prompt: str, default: str | None = None, validate=None, error: str = "v
 
 
 def _yes(prompt: str, default: bool = True) -> bool:
-    d = "S/n" if default else "s/N"
+    """Ask a yes/no question. Accepts y/yes and, for compatibility, s/si/sí."""
+    d = "Y/n" if default else "y/N"
     try:
         val = input(f"  {prompt} [{d}]: ").strip().lower()
     except EOFError:
         return default
-    return default if not val else val.startswith(("s", "y"))
+    return default if not val else val.startswith(("y", "s"))
 
 
 def toml_dump(orgs: list[dict]) -> str:
+    """Serialize orgs to orgs.toml text."""
     q = json.dumps
-    lines = ["# orgs.toml — organizaciones de AWS Identity Center para rolehop.",
-             "# Generado/actualizado por `rolehop init`. Puedes editarlo a mano; después ejecuta `rolehop sync`.",
-             "# Documentación: https://github.com/escobarjsa/rolehop", ""]
+    lines = ["# orgs.toml — AWS IAM Identity Center organizations for rolehop.",
+             "# Generated/updated by `rolehop init`. You can edit it by hand; then run `rolehop sync`.",
+             "# Documentation: https://github.com/escobarjsa/rolehop", ""]
     for org in orgs:
         lines += ["[[org]]", f"name = {q(org['name'])}", f"start_url = {q(org['start_url'])}",
                   f"sso_region = {q(org['sso_region'])}", f"region = {q(org.get('region', org['sso_region']))}",
@@ -739,21 +753,21 @@ def toml_dump(orgs: list[dict]) -> str:
 
 def _write_orgs(orgs: list[dict]) -> None:
     text = toml_dump(orgs)
-    tomllib.loads(text)  # validación: nunca escribir un TOML roto
+    tomllib.loads(text)  # sanity check: never write broken TOML
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     if CONFIG_PATH.exists():
         backup = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(CONFIG_PATH, backup)
-        print(f"  ✓ copia de seguridad: {backup}")
+        print(f"  ✓ Backup: {backup}")
     tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
     tmp.write_text(text)
     os.chmod(tmp, 0o600)
     tmp.replace(CONFIG_PATH)
-    print(f"  ✓ guardado {CONFIG_PATH}")
+    print(f"  ✓ Saved {CONFIG_PATH}")
 
 
 def _login_for_discovery(org: dict) -> bool:
-    """Login SSO usando un config temporal con solo el sso-session (no toca ~/.aws/config)."""
+    """Run SSO login against a temporary config holding only the sso-session (leaves ~/.aws/config alone)."""
     import tempfile
     block = (f"[sso-session {org['name']}]\nsso_start_url = {org['start_url']}\n"
              f"sso_region = {org['sso_region']}\nsso_registration_scopes = sso:account:access\n")
@@ -764,7 +778,7 @@ def _login_for_discovery(org: dict) -> bool:
         cmd = ["aws", "sso", "login", "--sso-session", org["name"]]
         if org.get("login_flow", "device") == "device":
             cmd.append("--use-device-code")
-        print(f"  → {' '.join(cmd)}  (aprueba en el navegador)")
+        print(f"  → {' '.join(cmd)}  (approve in your browser)")
         rc = subprocess.run(cmd, env=os.environ | {"AWS_CONFIG_FILE": tmp}).returncode
     finally:
         os.unlink(tmp)
@@ -774,7 +788,7 @@ def _login_for_discovery(org: dict) -> bool:
 
 
 def _alias_for(ps: str, roles_map: dict) -> str:
-    """Alias de [org.roles] para un permission set; lo crea (sin chocar con otro) si no existe."""
+    """Return the [org.roles] alias for a permission set, creating a non-clashing one if missing."""
     alias = next((k for k, v in roles_map.items() if v == ps), None)
     if alias is None:
         alias = role_alias(ps)
@@ -793,8 +807,8 @@ def _accounts_from_inventory(org_name: str, inv: list[dict], roles_map: dict, as
         aliases = [_alias_for(ps, roles_map) for ps in acc["roles"]]
         name = short_account_name(acc["name"], org_name)
         if ask_names:
-            name = _ask(f"Nombre corto para '{acc['name']}' ({acc['id']})", name, NAME_RE.match,
-                        "minúsculas, números, - o _")
+            name = _ask(f"Short name for '{acc['name']}' ({acc['id']})", name, NAME_RE.match,
+                        "use lowercase letters, digits, - or _")
         base, n = name, 2
         while name in used:
             name, n = f"{base}-{n}", n + 1
@@ -804,19 +818,19 @@ def _accounts_from_inventory(org_name: str, inv: list[dict], roles_map: dict, as
 
 
 def _manual_accounts(roles_map: dict) -> list[dict]:
-    print("  Escribe tus cuentas (las ves en el portal: nombre, ID de 12 dígitos y roles debajo de cada cuenta).")
+    print("  Enter your accounts (see the access portal: name, 12-digit ID, and the roles under each account).")
     accounts = []
     while True:
-        name = _ask("Nombre corto de la cuenta (ej. devsecops)", None, NAME_RE.match, "minúsculas, números, - o _")
-        acc_id = _ask("ID de la cuenta (12 dígitos)", None, lambda v: re.fullmatch(r"\d{12}", v), "deben ser 12 dígitos")
-        roles_txt = _ask("Roles separados por coma, tal como salen en el portal (ej. Administrator, ReadOnly)")
+        name = _ask("Account short name (e.g. devsecops)", None, NAME_RE.match, "use lowercase letters, digits, - or _")
+        acc_id = _ask("Account ID (12 digits)", None, lambda v: re.fullmatch(r"\d{12}", v), "must be 12 digits")
+        roles_txt = _ask("Roles, comma-separated, exactly as shown in the portal (e.g. Administrator, ReadOnly)")
         aliases = []
         for ps in [r.strip() for r in roles_txt.split(",") if r.strip()]:
             alias = next((k for k, v in roles_map.items() if v == ps), None) or role_alias(ps)
             roles_map.setdefault(alias, ps)
             aliases.append(alias)
         accounts.append({"name": name, "id": acc_id, "roles": aliases})
-        if not _yes("¿Agregar otra cuenta?", False):
+        if not _yes("Add another account?", False):
             return accounts
 
 
@@ -828,36 +842,36 @@ def _print_accounts(org_name: str, accounts: list[dict], roles_map: dict) -> Non
 
 def _wizard_new_org(existing: list[dict]) -> dict:
     taken = {o["name"] for o in existing}
-    print("\n  Nueva organización. Datos en el portal de acceso de AWS (la URL de la barra del navegador).")
-    name = _ask("Nombre corto de la organización (ej. empresa, personal)", None,
-                lambda v: NAME_RE.match(v) and v not in taken, "minúsculas/números/-/_ y que no exista ya")
-    url = _ask("URL del portal (https://xxxx.awsapps.com/start)", None,
-               lambda v: re.match(r"^https://[^\s/]+(/start)?/?(#.*)?$", v), "debe ser https://<algo>.awsapps.com/start")
+    print("\n  New organization. Find these details in the AWS access portal (the URL in your browser's address bar).")
+    name = _ask("Organization short name (e.g. acme, personal)", None,
+                lambda v: NAME_RE.match(v) and v not in taken, "use lowercase letters, digits, - or _, and a new name")
+    url = _ask("Access portal URL (https://xxxx.awsapps.com/start)", None,
+               lambda v: re.match(r"^https://[^\s/]+(/start)?/?(#.*)?$", v), "must be https://<name>.awsapps.com/start")
     url = re.sub(r"[/#].*$", "", url.split("://", 1)[1])
     url = f"https://{url}/start"
-    sso_region = _ask("Región de Identity Center", "us-east-1", lambda v: re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", v),
-                      "formato de región, p. ej. us-east-1")
-    region = _ask("Región por defecto para los perfiles", sso_region,
-                  lambda v: re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", v), "formato de región")
-    hours = _ask("¿Cuántas horas dura la sesión del portal? (si no lo sabes, 8)", "8",
-                 lambda v: re.fullmatch(r"\d{1,4}(\.\d+)?", v), "un número de horas")
+    sso_region = _ask("Identity Center region", "us-east-1", lambda v: re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", v),
+                      "expected a region, e.g. us-east-1")
+    region = _ask("Default region for profiles", sso_region,
+                  lambda v: re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", v), "expected a region")
+    hours = _ask("Portal session length in hours (if unsure, 8)", "8",
+                 lambda v: re.fullmatch(r"\d{1,4}(\.\d+)?", v), "expected a number of hours")
     org = {"name": name, "start_url": url, "sso_region": sso_region, "region": region, "login_flow": "device",
            "portal_session_hours": float(hours) if "." in hours else int(hours), "roles": {}, "accounts": []}
-    if _yes("¿Inicio sesión ahora y descubro tus cuentas y roles automáticamente? (recomendado)"):
+    if _yes("Log in now and discover your accounts and roles automatically? (recommended)"):
         try:
             if not _login_for_discovery(org):
-                raise PortalError("el login no se completó")
+                raise PortalError("login did not complete")
             inv = portal_inventory(name, sso_region)
             if not inv:
-                raise PortalError("el portal no devolvió cuentas")
+                raise PortalError("the portal returned no accounts")
             org["accounts"] = _accounts_from_inventory(name, inv, org["roles"], ask_names=False)
-            print(f"\n  Encontré {len(inv)} cuenta(s):")
+            print(f"\n  Found {len(inv)} account(s):")
             _print_accounts(name, org["accounts"], org["roles"])
-            if not _yes("¿Uso estos nombres cortos para los perfiles?"):
+            if not _yes("Use these short names for the profiles?"):
                 org["roles"] = {}
                 org["accounts"] = _accounts_from_inventory(name, inv, org["roles"], ask_names=True)
         except PortalError as exc:
-            print(f"  ! No pude descubrir automáticamente ({exc}). Vamos a escribirlas a mano.")
+            print(f"  ! Automatic discovery failed ({exc}). Enter the accounts manually.")
             org["accounts"] = _manual_accounts(org["roles"])
     else:
         org["accounts"] = _manual_accounts(org["roles"])
@@ -867,9 +881,9 @@ def _wizard_new_org(existing: list[dict]) -> dict:
 
 
 def _wizard_refresh_org(org: dict) -> None:
-    print(f"\n  Actualizar cuentas y roles de '{org['name']}' desde el portal.")
+    print(f"\n  Refreshing accounts and roles for '{org['name']}' from the portal.")
     if not _login_for_discovery(org):
-        raise ConfigError("el login no se completó")
+        raise ConfigError("login did not complete")
     try:
         inv = portal_inventory(org["name"], org["sso_region"])
     except PortalError as exc:
@@ -896,59 +910,59 @@ def _wizard_refresh_org(org: dict) -> None:
             org["accounts"].append(acc)
             added.append(f"{acc['name']} ({acc['id']})")
     if not added and not changed:
-        print("  ✓ No hay cambios: tu orgs.toml ya tiene todas las cuentas y roles.")
+        print("  ✓ No changes: your orgs.toml already has every account and role.")
     for a in added:
-        print(f"    + cuenta {a}")
+        print(f"    + account {a}")
     for c in changed:
         print(f"    + roles {c}")
 
 
 def cmd_init(args) -> int:
-    print("\n=== Asistente de rolehop: organizaciones de AWS Identity Center ===")
+    print("\n=== rolehop wizard: AWS IAM Identity Center organizations ===")
     orgs: list[dict] = []
     if CONFIG_PATH.exists():
         try:
             orgs = load_orgs()
         except ConfigError as exc:
-            print(f"  ✗ Tu {CONFIG_PATH} tiene un problema: {exc}\n  Corrígelo o muévelo y vuelve a ejecutar.")
+            print(f"  ✗ Your {CONFIG_PATH} has a problem: {exc}\n  Fix it or move it aside, then run this again.")
             return 2
-        print(f"  Ya tienes {CONFIG_PATH} con: {', '.join(o['name'] for o in orgs)}")
-        print("  (Si lo editaste a mano, los comentarios se perderán al guardar; se hace copia de seguridad.)")
+        print(f"  You already have {CONFIG_PATH} with: {', '.join(o['name'] for o in orgs)}")
+        print("  (If you edited it by hand, comments will be lost on save; a backup is made first.)")
     changed = False
     while True:
         if orgs:
-            print("\n  ¿Qué quieres hacer?\n    1) Agregar otra organización\n"
-                  "    2) Actualizar cuentas/roles de una organización (desde el portal)\n    3) Terminar")
-            choice = _ask("Opción", "3", lambda v: v in ("1", "2", "3"), "elige 1, 2 o 3")
+            print("\n  What would you like to do?\n    1) Add another organization\n"
+                  "    2) Refresh an organization's accounts/roles (from the portal)\n    3) Finish")
+            choice = _ask("Choice", "3", lambda v: v in ("1", "2", "3"), "choose 1, 2 or 3")
         else:
             choice = "1"
         if choice == "3":
             break
         if choice == "2":
-            name = _ask("¿Qué organización?", orgs[0]["name"], lambda v: v in {o["name"] for o in orgs},
-                        f"elige una de: {', '.join(o['name'] for o in orgs)}")
+            name = _ask("Which organization?", orgs[0]["name"], lambda v: v in {o["name"] for o in orgs},
+                        f"choose one of: {', '.join(o['name'] for o in orgs)}")
             _wizard_refresh_org(next(o for o in orgs if o["name"] == name))
             changed = True
             continue
         org = _wizard_new_org(orgs)
         if not org["accounts"]:
-            print("  ! Sin cuentas: no agrego esta organización.")
+            print("  ! No accounts: skipping this organization.")
         else:
             orgs.append(org)
             changed = True
-        if not _yes("¿Agregar otra organización?", False):
+        if not _yes("Add another organization?", False):
             break
     if not changed:
-        print("  Sin cambios.")
+        print("  No changes.")
         return 0
     _write_orgs(orgs)
-    load_orgs()  # validación final con las mismas reglas que sync
-    print("\n  Siguiente paso: `rolehop sync --dry-run` y luego `rolehop sync` (o el instalador lo hace por ti).")
+    load_orgs()  # final check with the same rules as sync
+    print("\n  Next step: `rolehop sync --dry-run`, then `rolehop sync` (or let the installer do it for you).")
     return 0
 
 
 def cmd_mark(args) -> int:
-    """Uso interno de los hooks: marca o limpia el estado 'sesión expirada' de una org."""
+    """Internal, for hooks: set or clear an org's 'session expired' state."""
     if not NAME_RE.match(args.org):
         return 0
     try:
@@ -963,7 +977,7 @@ def cmd_mark(args) -> int:
 
 
 def org_of_profile(profile: str) -> str | None:
-    """Devuelve la org a la que pertenece un nombre de perfil, según orgs.toml."""
+    """Return the org a profile name belongs to, according to orgs.toml."""
     try:
         for row in catalog(load_orgs()):
             if row["profile"] == profile:
@@ -996,7 +1010,7 @@ def cmd_hook(args) -> int:
         if args.kind == "post-tool":
             return hooks.post_tool(args.format)
         return hooks.cwd_direnv()
-    except Exception:  # noqa: BLE001 — un hook nunca debe romper la sesión del agente
+    except Exception:  # noqa: BLE001 — a hook must never break the agent's session
         return 0
 
 
@@ -1011,9 +1025,9 @@ def cmd_agent(args) -> int:
         if args.json:
             print(json.dumps(rows, indent=2))
             return 0
-        print(f"{'AGENTE':<10} {'DETECTADO':<10} {'INSTALADO':<10} {'HOOKS':<8} INSTRUCCIONES")
+        print(f"{'AGENT':<10} {'DETECTED':<10} {'INSTALLED':<10} {'HOOKS':<8} INSTRUCTIONS")
         for r in rows:
-            print(f"{r['agent']:<10} {'sí' if r['detected'] else '-':<10} {'sí' if r['installed'] else '-':<10} "
+            print(f"{r['agent']:<10} {'yes' if r['detected'] else '-':<10} {'yes' if r['installed'] else '-':<10} "
                   f"{r['hooks']:<8} {r['rules']}")
         return 0
     try:
@@ -1022,7 +1036,7 @@ def cmd_agent(args) -> int:
         print(f"✗ {exc.args[0]}", file=sys.stderr)
         return 2
     if not targets:
-        print("No detecté agentes de IA instalados. Indica cuáles: rolehop agent install claude codex …")
+        print("No installed AI agents detected. Name them explicitly: rolehop agent install claude codex …")
         return 1
     ch = agents.Changes(args.dry_run)
     for a in targets:
@@ -1033,39 +1047,39 @@ def cmd_agent(args) -> int:
     for line in ch.lines:
         print(f"  {line}")
     if args.action == "install" and not args.dry_run:
-        print("  Reinicia tus agentes para que carguen las instrucciones nuevas.")
+        print("  Restart your agents so they load the new instructions.")
     return 1 if any(line.startswith("✗") for line in ch.lines) else 0
 
 
 def cmd_setup(args) -> int:
     from rolehop import shellrc
-    print("==> 1. Shell (PATH y direnv)")
+    print("==> 1. Shell (PATH and direnv)")
     for m in shellrc.ensure_shell_integration(dry_run=args.dry_run):
         print(f"  {m}")
-    print("==> 2. Organizaciones")
+    print("==> 2. Organizations")
     if not CONFIG_PATH.exists():
         if args.dry_run or not sys.stdin.isatty():
-            print(f"  ! No existe {CONFIG_PATH}. Ejecuta `rolehop init` (asistente) y repite `rolehop setup`.")
+            print(f"  ! {CONFIG_PATH} not found. Run `rolehop init` (wizard), then `rolehop setup` again.")
             return 0 if args.dry_run else 1
         rc = cmd_init(args)
         if rc != 0 or not CONFIG_PATH.exists():
             return rc or 1
     else:
-        print(f"  ✓ uso {CONFIG_PATH}")
-    print("==> 3. Perfiles en ~/.aws/config")
+        print(f"  ✓ Using {CONFIG_PATH}")
+    print("==> 3. Profiles in ~/.aws/config")
     rc = cmd_sync(argparse.Namespace(dry_run=args.dry_run, prune=False, quiet=True))
     if rc != 0:
         return rc
-    print("==> 4. Agentes de IA")
+    print("==> 4. AI agents")
     if args.no_agents:
-        print("  (omitido: --no-agents)")
+        print("  (skipped: --no-agents)")
     else:
         rc = cmd_agent(argparse.Namespace(action="install", names=args.agents or [], all=False,
                                           dry_run=args.dry_run, no_hooks=False, json=False))
         if rc == 1 and not args.agents:
-            print("  (sin agentes detectados; instala luego con: rolehop agent install <agente>)")
-    print("==> Listo")
-    print("  Siguiente: awslogin  ·  rolehop status  ·  dile a tu agente «usa los perfiles y roles de AWS que necesites»")
+            print("  (no agents detected; install later with: rolehop agent install <agent>)")
+    print("==> Done")
+    print('  Next: awslogin  ·  rolehop status  ·  tell your agent "use whatever AWS profiles and roles you need"')
     return 0
 
 
@@ -1080,60 +1094,60 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True,
                           metavar="{setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,upgrade,uninstall}")
 
-    s = sub.add_parser("sync", help="escribe los perfiles en ~/.aws/config")
-    s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--prune", action="store_true", help="quita bloques de orgs que ya no existen")
-    s.add_argument("--quiet", action="store_true", help="no muestra el diff")
+    s = sub.add_parser("sync", help="write the profiles to ~/.aws/config")
+    s.add_argument("--dry-run", action="store_true", help="show the changes without writing anything")
+    s.add_argument("--prune", action="store_true", help="remove blocks for orgs that no longer exist")
+    s.add_argument("--quiet", action="store_true", help="don't show the diff")
     s.set_defaults(func=cmd_sync)
 
-    s = sub.add_parser("login", help="aws sso login solo donde haga falta")
+    s = sub.add_parser("login", help="run aws sso login only where needed")
     s.add_argument("orgs", nargs="*")
-    s.add_argument("--device", action="store_true", help="forzar código de dispositivo")
-    s.add_argument("--force", action="store_true", help="hacer login aunque haya sesión")
+    s.add_argument("--device", action="store_true", help="force the device code flow")
+    s.add_argument("--force", action="store_true", help="log in even if a session exists")
     s.set_defaults(func=cmd_login)
 
-    s = sub.add_parser("status", help="estado de sesión por org")
+    s = sub.add_parser("status", help="session status per org")
     s.add_argument("orgs", nargs="*")
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_status)
 
-    s = sub.add_parser("list", help="catálogo de perfiles")
+    s = sub.add_parser("list", help="catalog of profiles")
     s.add_argument("--json", action="store_true")
     s.add_argument("--org")
     s.set_defaults(func=cmd_list)
 
-    s = sub.add_parser("envrc", help="imprime un .envrc para direnv")
+    s = sub.add_parser("envrc", help="print an .envrc for direnv")
     s.add_argument("profile")
-    s.add_argument("--state", help="perfil para el estado remoto de Terraform/Terragrunt")
+    s.add_argument("--state", help="profile for the Terraform/Terragrunt remote state")
     s.add_argument("--state-var", default="AWS_STATE_PROFILE",
-                   help="variable donde va el perfil del estado (por defecto AWS_STATE_PROFILE)")
+                   help="variable that holds the state profile (default: AWS_STATE_PROFILE)")
     s.set_defaults(func=cmd_envrc)
 
-    s = sub.add_parser("init", help="asistente: te pregunta tus organizaciones y crea orgs.toml")
+    s = sub.add_parser("init", help="wizard: asks for your organizations and creates orgs.toml")
     s.set_defaults(func=cmd_init)
 
-    s = sub.add_parser("discover", help="lista cuentas y roles reales de una org")
+    s = sub.add_parser("discover", help="list an org's actual accounts and roles")
     s.add_argument("org")
     s.set_defaults(func=cmd_discover)
 
-    s = sub.add_parser("setup", help="todo en uno: PATH, asistente si falta config, perfiles y agentes de IA")
+    s = sub.add_parser("setup", help="all-in-one: PATH, wizard if no config, profiles and AI agents")
     s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--no-agents", action="store_true", help="no instalar instrucciones/hooks en agentes")
-    s.add_argument("--agent", dest="agents", action="append", help="agente concreto (repetible); por defecto, los detectados")
+    s.add_argument("--no-agents", action="store_true", help="don't install instructions/hooks for agents")
+    s.add_argument("--agent", dest="agents", action="append", help="a specific agent (repeatable); default: detected ones")
     s.set_defaults(func=cmd_setup)
 
-    s = sub.add_parser("run", help="comprueba/renueva la sesión antes de dejar trabajando a un agente")
-    s.add_argument("--org", action="append", help="org a comprobar (repetible); por defecto todas")
-    s.add_argument("--max", default="4h", help="duración del trabajo: 90m, 3h, 1h30m (por defecto 4h)")
-    s.add_argument("--login", action="store_true", help="renueva antes la sesión (ventana completa desde ahora)")
-    s.add_argument("--yes", action="store_true", help="arranca aunque no se pueda estimar el tiempo restante")
-    s.add_argument("command", nargs=argparse.REMAINDER, help="-- comando a ejecutar (opcional)")
+    s = sub.add_parser("run", help="check/renew the session before leaving an agent to work")
+    s.add_argument("--org", action="append", help="org to check (repeatable); default: all")
+    s.add_argument("--max", default="4h", help="job duration: 90m, 3h, 1h30m (default: 4h)")
+    s.add_argument("--login", action="store_true", help="renew the session first (full window from now)")
+    s.add_argument("--yes", action="store_true", help="start even if the remaining time can't be estimated")
+    s.add_argument("command", nargs=argparse.REMAINDER, help="-- command to run (optional)")
     s.set_defaults(func=cmd_run)
 
-    s = sub.add_parser("agent", help="instrucciones y hooks para agentes de IA (claude, codex, kiro, copilot…)")
+    s = sub.add_parser("agent", help="instructions and hooks for AI agents (claude, codex, kiro, copilot…)")
     s.add_argument("action", choices=["list", "install", "uninstall", "rules"])
-    s.add_argument("names", nargs="*", help="agentes; por defecto los detectados")
-    s.add_argument("--all", action="store_true", help="todos los agentes soportados")
+    s.add_argument("names", nargs="*", help="agents; default: detected ones")
+    s.add_argument("--all", action="store_true", help="all supported agents")
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-hooks", action="store_true")
     s.add_argument("--json", action="store_true")
@@ -1163,7 +1177,7 @@ def main(argv: list[str] | None = None) -> int:
             for msg in migrate_legacy():
                 print(msg, file=sys.stderr)
         except OSError as exc:
-            print(f"! No pude migrar la configuración de {LEGACY_NAME}: {exc}", file=sys.stderr)
+            print(f"! Could not migrate the {LEGACY_NAME} configuration: {exc}", file=sys.stderr)
     try:
         return args.func(args)
     except ConfigError as exc:

@@ -14,9 +14,9 @@ rolehop run --login --max 6h
 
 ```console
 $ rolehop run --login --max 6h
-→ Renovando la sesión para tener la ventana completa desde ahora…
-✓ acme: quedan ~8h (necesitas 6h 15m).
-✓ Listo: la sesión alcanza para ~6h. Puedes dejar trabajando a tu agente.
+→ Renewing the session so the full window starts now…
+✓ acme: ~8h00m left (you need 6h15m).
+✓ Ready: the session will last ~6h. You can leave your agent working.
 ```
 
 Agents that have the `rolehop` rules will **suggest this command themselves** when you say *"I'm leaving"* or *"keep working"*, propose a duration based on the pending work, and reorder the plan so AWS tasks run first.
@@ -32,9 +32,9 @@ rolehop run --login --max 6h -- claude -p "Upgrade the EKS add-ons in dev"
 It checks the session, runs the command and, at the end, reports any organization whose session expired during the run, with the exact commands to recover:
 
 ```text
-⚠ La sesión AWS terminó durante el trabajo en: acme
+⚠ The AWS session ended during the work in: acme
   1) awslogin acme
-  2) Reanuda la conversación de tu agente (en Claude Code: claude --continue).
+  2) Resume your agent's conversation (in Claude Code: claude --continue).
 ```
 
 ## Options

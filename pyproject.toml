@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rolehop"
-version = "1.4.0"
+version = "1.5.0"
 description = "Auto-refreshing AWS IAM Identity Center profiles for many organizations, ready for humans and AI coding agents (Claude Code, Codex, Kiro, Gemini…)."
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,6 @@ classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: System Administrators",
   "Natural Language :: English",
-  "Natural Language :: Spanish",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
   "Programming Language :: Python :: 3",
@@ -50,7 +49,7 @@ docs = ["zensical>=0.1"]
 packages = ["src/rolehop"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/rolehop", "tests", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "docs", "zensical.toml"]
+include = ["src/rolehop", "tests", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "docs", "zensical.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

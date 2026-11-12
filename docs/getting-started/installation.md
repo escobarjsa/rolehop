@@ -28,7 +28,7 @@
     ```bash
     uv tool install git+https://github.com/escobarjsa/rolehop
     # or pin a release
-    uv tool install git+https://github.com/escobarjsa/rolehop@v1.4.0
+    uv tool install git+https://github.com/escobarjsa/rolehop@v1.5.0
     ```
 
 === "From a GitHub Release"
@@ -36,7 +36,7 @@
     Every release attaches a ready-to-install wheel. No git needed:
 
     ```bash
-    uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.4.0/rolehop-1.4.0-py3-none-any.whl
+    uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
     ```
 
     See all versions on the [Releases page](https://github.com/escobarjsa/rolehop/releases).
@@ -84,7 +84,7 @@ rolehop upgrade             # install it, with the same installer you used
 `rolehop upgrade` reads the latest [GitHub Release](https://github.com/escobarjsa/rolehop/releases) and reinstalls from its wheel. Your configuration and profiles are untouched. Versions older than 1.4.0 do not have this command; upgrade them once by hand:
 
 ```bash
-uv tool install --force https://github.com/escobarjsa/rolehop/releases/download/v1.4.0/rolehop-1.4.0-py3-none-any.whl
+uv tool install --force https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
 ```
 
 ## Uninstall

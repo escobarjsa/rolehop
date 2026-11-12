@@ -1,39 +1,39 @@
-# AWS con rolehop
+# AWS with rolehop
 
-El usuario trabaja con varias organizaciones de AWS IAM Identity Center gestionadas con **rolehop**. Sigue estas reglas en todos los proyectos.
+The user works with multiple AWS IAM Identity Center organizations managed by **rolehop**. Follow these rules in every project. Reply to the user in their own language.
 
-## Credenciales y perfiles
+## Credentials and profiles
 
-- Usa **siempre perfiles** con `AWS_PROFILE=<perfil>` delante de cada comando (`aws`, `terraform`, `tofu`, `terragrunt`, scripts con boto3). Si un proyecto usa otra variable para el perfil del estado remoto (por ejemplo `TF_STATE_PROFILE`), defínela igual.
-- **Catálogo:** `rolehop list` (o `rolehop list --json`) muestra todos los perfiles: `<org>-<cuenta>-<rol>`, por ejemplo `empresa-devsecops-admin`. Consúltalo para elegir.
-- **Elige libremente** el perfil y el rol que la tarea necesite, Admin incluido, sin pedir permiso. Prefiere uno de solo lectura para consultar si existe, y di en una línea qué perfil usaste.
-- Al cambiar de cuenta o de rol, confirma con `AWS_PROFILE=<perfil> aws sts get-caller-identity`.
-- Al empezar un trabajo con AWS: `rolehop status` para ver qué organizaciones tienen sesión.
-- Si el repo tiene `.envrc`, su `AWS_PROFILE` es solo el valor por defecto; puedes usar otro en cada comando.
-- Si el usuario pide agregar una organización, indícale `rolehop init` (asistente).
-- Si falta una cuenta o un rol, o un perfil falla con `ForbiddenException` (rol revocado), puedes ejecutar `rolehop refresh <org>`: recarga cuentas y roles desde el portal y solo agrega. Quitar perfiles (`rolehop refresh --prune`, `rolehop remove`) o desinstalar (`rolehop uninstall`) solo si el usuario lo pide.
+- **Always use profiles**: prefix every command (`aws`, `terraform`, `tofu`, `terragrunt`, boto3 scripts) with `AWS_PROFILE=<profile>`. If a project uses a different variable for the remote-state profile (for example `TF_STATE_PROFILE`), set it the same way.
+- **Catalog:** `rolehop list` (or `rolehop list --json`) shows every profile as `<org>-<account>-<role>`, for example `acme-devsecops-admin`. Check it to pick one.
+- **Choose freely** whichever profile and role the task needs, Admin included, without asking for permission. Prefer a read-only one for queries when available, and state in one line which profile you used.
+- When switching account or role, confirm with `AWS_PROFILE=<profile> aws sts get-caller-identity`.
+- When starting AWS work, run `rolehop status` to see which organizations have an active session.
+- If the repo has an `.envrc`, its `AWS_PROFILE` is only the default; you may use a different one per command.
+- If the user asks to add an organization, point them to `rolehop init` (interactive wizard).
+- If an account or role is missing, or a profile fails with `ForbiddenException` (role revoked), you may run `rolehop refresh <org>`: it reloads accounts and roles from the portal and only adds. Remove profiles (`rolehop refresh --prune`, `rolehop remove`) or uninstall (`rolehop uninstall`) only when the user asks.
 
-## Prohibido
+## Forbidden
 
-- Leer `~/.aws`, pegar o exportar claves (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`), o pedir al usuario las «claves de acceso» del portal.
-- Usar `aws configure export-credentials`, `aws configure get`, `aws sso get-role-credentials`, `assume` o `granted`.
-- Ejecutar `direnv allow` (los `.envrc` los aprueba el usuario).
-- Ejecutar `awslogin`, `rolehop login`, `aws sso login` o `rolehop run --login` tú mismo: requieren al usuario en el navegador.
+- Reading `~/.aws`, pasting or exporting keys (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`), or asking the user for the portal's "access keys".
+- Using `aws configure export-credentials`, `aws configure get`, `aws sso get-role-credentials`, `assume` or `granted`.
+- Running `direnv allow` (the user approves `.envrc` files).
+- Running `awslogin`, `rolehop login`, `aws sso login` or `rolehop run --login` yourself: they require the user in the browser.
 
-## Cuando la sesión expira
+## When the session expires
 
-Si un comando devuelve `ExpiredToken`, `Token has expired`, `SSO session … expired`, `InvalidGrant`, `cannot be refreshed` o similar:
-1. **Detente** con AWS. No reintentes y no cambies a otro perfil u organización para esquivarlo.
-2. Pide al usuario que ejecute en su terminal: `awslogin <org>` (la org es el prefijo del perfil).
-3. Cuando lo confirme, continúa desde donde quedaste. Mientras tanto puedes avanzar en lo que no use AWS.
+If a command returns `ExpiredToken`, `Token has expired`, `SSO session … expired`, `InvalidGrant`, `cannot be refreshed` or similar:
+1. **Stop** all AWS work. Do not retry, and do not switch to another profile or organization to work around it.
+2. Ask the user to run in their terminal: `awslogin <org>` (the org is the profile prefix).
+3. Once they confirm, resume where you left off. Meanwhile, continue with anything that does not use AWS.
 
-Las credenciales de cada rol se renuevan solas durante la sesión del portal. Solo hace falta `awslogin` cuando termina esa sesión.
+Each role's credentials renew automatically during the portal session. `awslogin` is needed only when that session ends.
 
-## Cuando el usuario se va y te deja trabajando
+## When the user leaves you working
 
-Si dice algo como «me voy», «te dejo trabajando» o «sigue tú» y la tarea usa AWS:
-1. Antes de que se vaya, pídele que ejecute: `rolehop run --login --max <duración estimada>` (renueva la sesión y comprueba que alcanza). Propón la duración según el trabajo pendiente, por ejemplo `--max 6h`.
-2. Cuando confirme, ejecuta `rolehop status`. Si no alcanza, dile el máximo posible y cómo dividir el trabajo.
-3. Reordena el plan: **primero todo lo que necesita AWS** y después lo demás.
-4. Si la sesión expira sin el usuario, detén lo de AWS, sigue con el resto y deja al final un resumen con lo que falta y el comando `awslogin <org>`. Recuérdale que el código de dispositivo se puede aprobar desde el celular.
-5. Los cambios de infraestructura que deban aplicarse sin el usuario van por PR y pipeline, nunca con sus credenciales.
+If the user says something like "I'm heading out", "keep working" or "take it from here" and the task uses AWS:
+1. Before they leave, ask them to run: `rolehop run --login --max <estimated duration>` (renews the session and checks it lasts long enough). Suggest a duration based on the remaining work, for example `--max 6h`.
+2. Once they confirm, run `rolehop status`. If the session won't last long enough, tell them the maximum available and how to split the work.
+3. Reorder the plan: **everything that needs AWS first**, then the rest.
+4. If the session expires while the user is away, stop the AWS work, continue with the rest, and finish with a summary of what is left plus the command `awslogin <org>`. Remind them that the device code can be approved from their phone.
+5. Infrastructure changes that must be applied without the user go through a PR and pipeline, never with the user's credentials.

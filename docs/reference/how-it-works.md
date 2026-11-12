@@ -43,7 +43,7 @@ flowchart TB
 `sync` owns only what is between its markers in `~/.aws/config`:
 
 ```ini
-# >>> rolehop:<org> (gestionado por rolehop, no editar) >>>
+# >>> rolehop:<org> (managed by rolehop, do not edit) >>>
 …
 # <<< rolehop:<org> <<<
 ```

@@ -43,7 +43,7 @@ rolehop setup
 Before the PyPI release, install from GitHub — the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
-uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.4.0/rolehop-1.4.0-py3-none-any.whl
+uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
 uv tool install git+https://github.com/escobarjsa/rolehop
 ```
 
@@ -106,8 +106,6 @@ See the [configuration reference](https://escobarjsa.github.io/rolehop/guide/con
 
 `rolehop` was named `awsorg` up to 1.2.0. Configuration, state, managed blocks and agent hooks are adopted automatically — see the [migration guide](https://escobarjsa.github.io/rolehop/reference/migrating-from-awsorg/).
 
-> **Note:** CLI messages are currently in Spanish.
-
 ## Development
 
 ```bash
@@ -116,6 +114,10 @@ uv run --group dev ruff check src tests
 uv run --group docs zensical serve    # docs at http://localhost:8000
 uv build
 ```
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

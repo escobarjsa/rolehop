@@ -7,7 +7,7 @@ dist/
 build/
 site/
 *.egg-info/
-# Nunca subir configuración personal
+# Never commit personal configuration
 orgs.toml
 !src/rolehop/data/orgs.example.toml
 *.bak-*

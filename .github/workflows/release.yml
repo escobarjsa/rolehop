@@ -1,6 +1,6 @@
 name: Release
-# Al subir una etiqueta vX.Y.Z: tests, build, Release de GitHub con el wheel y el sdist adjuntos
-# y, si la variable del repo PUBLISH_TO_PYPI vale "true", publicación en PyPI con Trusted Publishing.
+# On a vX.Y.Z tag: checks, build, and a GitHub Release with the wheel and sdist attached;
+# publishes to PyPI with Trusted Publishing only when the repository variable PUBLISH_TO_PYPI is "true".
 on:
   push:
     tags: ["v*.*.*"]

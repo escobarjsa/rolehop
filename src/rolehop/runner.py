@@ -1,4 +1,4 @@
-"""`rolehop run`: comprobar (y renovar) la sesión antes de dejar trabajando a un agente, y avisar si algo quedó bloqueado."""
+"""`rolehop run`: check (and renew) the session before leaving an agent unattended, and report anything that got blocked."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ MARGIN_MIN = 15
 
 
 def parse_minutes(value: str) -> int | None:
-    """90m | 3h | 1h30m | 120 → minutos; None si no es válida."""
+    """Parse 90m | 3h | 1h30m | 120 into minutes; None if invalid."""
     m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m?)?", value.strip())
     if not m or not (m.group(1) or m.group(2)):
         return None
@@ -24,56 +24,56 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
     from rolehop import cli
     max_min = parse_minutes(max_value)
     if not max_min:
-        print(f"✗ Duración inválida: {max_value} (usa 90m, 3h, 1h30m)")
+        print(f"✗ Invalid duration: {max_value} (use 90m, 3h, 1h30m)")
         return 2
     need = max_min + MARGIN_MIN
     orgs = cli.select(cli.load_orgs(), orgs_names)
     if login:
-        print("→ Renovando la sesión para tener la ventana completa desde ahora…")
+        print("→ Renewing the session so the full window starts now…")
         rc = cli.cmd_login(type("A", (), {"orgs": [o["name"] for o in orgs], "force": True, "device": False})())
         if rc != 0:
-            print("✗ El login falló.")
+            print("✗ Login failed.")
             return 1
     fail = False
     for org in orgs:
         r = cli.check_org(org)
         left = r.get("estimated_left_min")
         if not r["ok"]:
-            print(f"✗ {org['name']}: sin sesión. Ejecuta: awslogin {org['name']}   (o usa --login)")
+            print(f"✗ {org['name']}: no session. Run: awslogin {org['name']}   (or use --login)")
             fail = True
         elif left is None:
             if yes:
-                print(f"! {org['name']}: sesión activa, tiempo restante desconocido (sigo por --yes)")
+                print(f"! {org['name']}: session active, time remaining unknown (continuing because of --yes)")
             else:
-                print(f"! {org['name']}: sesión activa pero no sé cuánto queda. Usa --login (recomendado) o --yes.")
+                print(f"! {org['name']}: session active but time remaining is unknown. Use --login (recommended) or --yes.")
                 fail = True
         elif left < need:
             best = max(left - MARGIN_MIN, 0)
             if login:
-                print(f"✗ {org['name']}: la sesión del portal dura ~{fmt(left)} y pediste {max_value} "
-                      f"(+{MARGIN_MIN}m de margen). Usa como máximo --max {fmt(best)} o divide el trabajo.")
+                print(f"✗ {org['name']}: the access portal session lasts ~{fmt(left)} and you asked for {max_value} "
+                      f"(+{MARGIN_MIN}m margin). Use at most --max {fmt(best)} or split the work.")
             else:
-                print(f"✗ {org['name']}: quedan ~{fmt(left)} y el trabajo necesita {fmt(need)} (con margen). "
-                      f"Usa --login para renovar, o --max {fmt(best)}.")
+                print(f"✗ {org['name']}: ~{fmt(left)} left and the work needs {fmt(need)} (including margin). "
+                      f"Use --login to renew, or --max {fmt(best)}.")
             fail = True
         else:
-            print(f"✓ {org['name']}: quedan ~{fmt(left)} (necesitas {fmt(need)}).")
+            print(f"✓ {org['name']}: ~{fmt(left)} left (you need {fmt(need)}).")
     if fail:
-        print(f"No arranco: la sesión no alcanza para --max {max_value}.")
+        print(f"Not starting: the session will not last for --max {max_value}.")
         return 75
     if not command:
-        print(f"✓ Listo: la sesión alcanza para ~{max_value}. Puedes dejar trabajando a tu agente.")
-        print("  Si expira antes, puedes aprobar el login desde el celular (código de dispositivo: awslogin).")
+        print(f"✓ Ready: the session will last ~{max_value}. You can leave your agent working.")
+        print("  If it expires earlier, you can approve the login from your phone (device code: awslogin).")
         return 0
-    print(f"→ Ejecutando: {' '.join(command)}")
+    print(f"→ Running: {' '.join(command)}")
     try:
         rc = subprocess.run(command).returncode
     except FileNotFoundError:
-        print(f"✗ No se encontró el comando: {command[0]}")
+        print(f"✗ Command not found: {command[0]}")
         return 127
     blocked = [o["name"] for o in orgs if cli.read_state(o["name"]).get("blocked")]
     if blocked:
-        print(f"\n⚠ La sesión AWS terminó durante el trabajo en: {' '.join(blocked)}")
+        print(f"\n⚠ The AWS session ended during the work in: {' '.join(blocked)}")
         print(f"  1) awslogin {' '.join(blocked)}")
-        print("  2) Reanuda la conversación de tu agente (en Claude Code: claude --continue).")
+        print("  2) Resume your agent's conversation (in Claude Code: claude --continue).")
     return rc

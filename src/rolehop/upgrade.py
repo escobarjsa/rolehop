@@ -1,4 +1,4 @@
-"""`rolehop upgrade`: busca el último Release de GitHub y actualiza la herramienta con el mismo instalador."""
+"""`rolehop upgrade`: find the latest GitHub release and upgrade the tool with the installer that installed it."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def latest_release() -> dict:
 
 
 def installer() -> str | None:
-    """'uv' o 'pipx' según dónde está instalado rolehop; None si no se reconoce (p. ej. un venv de desarrollo)."""
+    """Return 'uv' or 'pipx' depending on where rolehop is installed; None if unknown (e.g. a development venv)."""
     prefix = sys.prefix.replace("\\", "/")
     uv_dir = (os.environ.get("UV_TOOL_DIR") or "").replace("\\", "/").rstrip("/")
     if "/uv/tools/" in prefix or (uv_dir and prefix.startswith(uv_dir + "/")):
@@ -58,38 +58,38 @@ def cmd_upgrade(args) -> int:
         rel = latest_release()
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            print(f"✗ {REPO} todavía no tiene releases publicados en GitHub.", file=sys.stderr)
+            print(f"✗ {REPO} has no published releases on GitHub yet.", file=sys.stderr)
         else:
-            print(f"✗ GitHub respondió {exc.code} al consultar los releases.", file=sys.stderr)
+            print(f"✗ GitHub returned {exc.code} when fetching releases.", file=sys.stderr)
         return 1
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        print(f"✗ No pude consultar los releases de GitHub: {exc}", file=sys.stderr)
+        print(f"✗ Could not fetch releases from GitHub: {exc}", file=sys.stderr)
         return 1
     if not rel["tag"]:
-        print("✗ GitHub no devolvió ningún release.", file=sys.stderr)
+        print("✗ GitHub returned no release.", file=sys.stderr)
         return 1
     current, latest = _parse(__version__), _parse(rel["version"])
     if latest <= current and not args.force:
-        print(f"✓ rolehop {__version__} ya es la última versión ({rel['tag']}).")
+        print(f"✓ rolehop {__version__} is already the latest version ({rel['tag']}).")
         return 0
-    print(f"→ Hay una versión nueva: {__version__} → {rel['version']}  {rel['url']}")
+    print(f"→ New version available: {__version__} → {rel['version']}  {rel['url']}")
     cmd = upgrade_command(rel, installer())
     if cmd is None:
         source = rel["wheel"] or f"git+https://github.com/{REPO}@{rel['tag']}"
-        print(f"  No reconozco cómo se instaló rolehop. Actualiza a mano con:\n    uv tool install --force {source}")
+        print(f"  Could not determine how rolehop was installed. Upgrade manually with:\n    uv tool install --force {source}")
         return 1 if not args.check else 0
     if args.check:
-        print(f"  Para actualizar: rolehop upgrade   (ejecutará: {' '.join(cmd)})")
+        print(f"  To upgrade: rolehop upgrade   (will run: {' '.join(cmd)})")
         return 0
     print(f"→ {' '.join(cmd)}")
     rc = subprocess.run(cmd).returncode
     if rc == 0:
-        print(f"✓ Actualizado a {rel['version']}. Si cambió algo de los agentes, ejecuta: rolehop agent install")
+        print(f"✓ Upgraded to {rel['version']}. If the agent integration changed, run: rolehop agent install")
     return rc
 
 
 def register(sub) -> None:
-    s = sub.add_parser("upgrade", help="actualiza rolehop al último release de GitHub")
-    s.add_argument("--check", action="store_true", help="solo comprueba si hay una versión nueva")
-    s.add_argument("--force", action="store_true", help="reinstala aunque ya tengas la última")
+    s = sub.add_parser("upgrade", help="upgrade rolehop to the latest GitHub release")
+    s.add_argument("--check", action="store_true", help="only check whether a new version is available")
+    s.add_argument("--force", action="store_true", help="reinstall even if already on the latest version")
     s.set_defaults(func=cmd_upgrade)

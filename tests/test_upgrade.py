@@ -1,4 +1,4 @@
-"""`rolehop upgrade` contra un endpoint de releases simulado (sin red real)."""
+"""`rolehop upgrade` against a mocked releases endpoint (no real network)."""
 
 from __future__ import annotations
 
@@ -47,14 +47,14 @@ def test_parse_version():
     assert upgrade._parse("v2") == (2, 0, 0)
 
 
-def test_ya_es_la_ultima(releases, monkeypatch, capsys):
+def test_already_latest(releases, monkeypatch, capsys):
     monkeypatch.setattr(upgrade, "__version__", "9.9.9")
     Releases.payload = release("v1.4.0")
     assert upgrade.cmd_upgrade(type("A", (), {"check": False, "force": False})()) == 0
-    assert "ya es la última" in capsys.readouterr().out and releases == []
+    assert "already the latest" in capsys.readouterr().out and releases == []
 
 
-def test_actualiza_con_uv_usando_el_wheel(releases, monkeypatch):
+def test_upgrades_with_uv_using_wheel(releases, monkeypatch):
     monkeypatch.setattr(upgrade, "__version__", "1.3.1")
     monkeypatch.setattr(upgrade, "installer", lambda: "uv")
     Releases.payload = release("v1.4.0")
@@ -63,7 +63,7 @@ def test_actualiza_con_uv_usando_el_wheel(releases, monkeypatch):
                          "https://example.test/v1.4.0/rolehop-1.4.0-py3-none-any.whl"]]
 
 
-def test_check_no_instala_y_sin_wheel_usa_git(releases, monkeypatch, capsys):
+def test_check_does_not_install_and_uses_git_without_wheel(releases, monkeypatch, capsys):
     monkeypatch.setattr(upgrade, "__version__", "1.3.1")
     monkeypatch.setattr(upgrade, "installer", lambda: "pipx")
     Releases.payload = release("v1.4.0", wheel=False)
@@ -72,7 +72,7 @@ def test_check_no_instala_y_sin_wheel_usa_git(releases, monkeypatch, capsys):
     assert releases == [] and "pipx install --force git+https://github.com/escobarjsa/rolehop@v1.4.0" in out
 
 
-def test_instalador_desconocido_da_el_comando(releases, monkeypatch, capsys):
+def test_unknown_installer_prints_command(releases, monkeypatch, capsys):
     monkeypatch.setattr(upgrade, "__version__", "1.3.1")
     monkeypatch.setattr(upgrade, "installer", lambda: None)
     Releases.payload = release("v1.4.0")
@@ -80,7 +80,7 @@ def test_instalador_desconocido_da_el_comando(releases, monkeypatch, capsys):
     assert "uv tool install --force https://example.test/v1.4.0/" in capsys.readouterr().out and releases == []
 
 
-def test_installer_detecta_uv_y_pipx(monkeypatch):
+def test_installer_detects_uv_and_pipx(monkeypatch):
     monkeypatch.delenv("UV_TOOL_DIR", raising=False)
     monkeypatch.setattr(upgrade.sys, "prefix", "/home/u/.local/share/uv/tools/rolehop")
     assert upgrade.installer() == "uv"

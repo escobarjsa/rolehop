@@ -1,4 +1,4 @@
-"""Aísla cada test: HOME, config de rolehop, ~/.aws/config y estado en un directorio temporal."""
+"""Isolate each test: HOME, rolehop config, ~/.aws/config and state live in a temporary directory."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import pytest
 
 SAMPLE = textwrap.dedent("""
     [[org]]
-    name = "empresa"
-    start_url = "https://empresa.awsapps.com/start"
+    name = "acme"
+    start_url = "https://acme.awsapps.com/start"
     sso_region = "us-east-1"
     default_role = "admin"
 
@@ -33,7 +33,7 @@ SAMPLE = textwrap.dedent("""
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """Recarga rolehop.cli con rutas temporales y devuelve (cli, rutas)."""
+    """Reload rolehop.cli with temporary paths and return (cli, paths)."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
