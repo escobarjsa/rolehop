@@ -91,7 +91,7 @@ rolehop refresh [ORG ...] [--prune] [--dry-run] [--login] [--yes]
 | `--login` | Log in first if an organization has no session. |
 | `--yes` | Do not ask for confirmation when profiles would be removed. |
 
-Safety rules: roles used as `source` of an `assume_roles` entry are never pruned; `--prune` is refused if the portal returns no accounts or if the organization would end up empty; profiles written with an exact permission set name are never renamed. Nothing is written if `sync` would then fail. Exit code `1` if some organization could not be read (no session) — the others are still applied.
+Safety rules: roles used as `source` of an `assume_roles` entry are never pruned; `--prune` is refused if the portal returns no accounts or if the organization would end up empty; profiles written with an exact permission set name are never renamed. Nothing is written if `sync` would then fail. Exit code `1` if some organization could not be read (no session) - the others are still applied.
 
 ## `rolehop remove`
 
@@ -108,7 +108,7 @@ rolehop remove TARGET ... [--dry-run] [--yes]
 | Profile | `acme-prod-admin` | That role only (the account goes too if it has no roles left) |
 | Chained role | `acme-deploy-prod` | That `assume_roles` profile |
 
-It asks for confirmation (use `--yes` in scripts). It refuses to remove a profile that is the `source` of a chained role, or to leave an organization empty — remove the whole organization instead, or use `rolehop uninstall` to remove everything.
+It asks for confirmation (use `--yes` in scripts). It refuses to remove a profile that is the `source` of a chained role, or to leave an organization empty - remove the whole organization instead, or use `rolehop uninstall` to remove everything.
 
 ## `rolehop run`
 

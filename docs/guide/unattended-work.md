@@ -45,7 +45,7 @@ It checks the session, runs the command and, at the end, reports any organizatio
 | `--login` | off | Renew the session first, for a full window from now. |
 | `--org ORG` | all | Organization to check. Repeatable. |
 | `--yes` | off | Start even when the remaining time cannot be estimated. |
-| `-- COMMAND` | — | Command to run after the checks. |
+| `-- COMMAND` | - | Command to run after the checks. |
 
 ## Exit codes
 
@@ -61,5 +61,5 @@ It checks the session, runs the command and, at the end, reports any organizatio
 ## Best practices
 
 - **AWS first.** Do the work that needs AWS early in the window; leave code, docs and local tests for the end.
-- **Infrastructure through pipelines.** Changes that must be applied while you are away belong in a PR applied by CI/CD with its own role (OIDC, CodePipeline) — never a local `apply` with human credentials.
+- **Infrastructure through pipelines.** Changes that must be applied while you are away belong in a PR applied by CI/CD with its own role (OIDC, CodePipeline) - never a local `apply` with human credentials.
 - **Do not raise session durations to make this work.** Splitting the job is safer than longer-lived sessions.

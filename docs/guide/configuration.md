@@ -66,14 +66,14 @@ roles = ["admin"]
 
 | Key | Required | Default | Description |
 |---|---|---|---|
-| `name` | yes | — | Short organization name. Prefix of every profile and name of the `sso-session`. |
-| `start_url` | yes | — | AWS access portal URL, `https://<something>.awsapps.com/start`. |
-| `sso_region` | yes | — | Region where IAM Identity Center is enabled. |
+| `name` | yes | - | Short organization name. Prefix of every profile and name of the `sso-session`. |
+| `start_url` | yes | - | AWS access portal URL, `https://<something>.awsapps.com/start`. |
+| `sso_region` | yes | - | Region where IAM Identity Center is enabled. |
 | `region` | no | `sso_region` | Default region written to each profile. |
 | `login_flow` | no | `device` | `device` (device code, works anywhere) or `pkce` (browser on the same machine). |
 | `portal_session_hours` | no | `8` | Your portal session length. Used **only** to estimate remaining time. |
-| `default_role` | no | — | Role alias used to choose the probe profile for `status`. |
-| `probe_profile` | no | — | Exact profile used to probe the session. Must exist in this org. |
+| `default_role` | no | - | Role alias used to choose the probe profile for `status`. |
+| `probe_profile` | no | - | Exact profile used to probe the session. Must exist in this org. |
 
 ## `[org.roles]`
 

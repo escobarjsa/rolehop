@@ -5,31 +5,31 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 
-**Hop between AWS accounts and roles with one login a day — and let your AI coding agent do the same, safely.**
+**Hop between AWS accounts and roles with one login a day - and let your AI coding agent do the same, safely.**
 
-`rolehop` turns a small TOML file describing your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles in `~/.aws/config`. It gives you a one-command login (`awslogin`) and teaches AI coding agents — Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code, OpenCode, Amp and more — how to pick profiles, and what to do when the SSO session expires.
+`rolehop` turns a small TOML file describing your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles in `~/.aws/config`. It gives you a one-command login (`awslogin`) and teaches AI coding agents - Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code, OpenCode, Amp and more - how to pick profiles, and what to do when the SSO session expires.
 
-📖 **Documentation: <https://escobarjsa.github.io/rolehop/>**
+**Documentation:** <https://escobarjsa.github.io/rolehop/>
 
 ## Why
 
-Copying the temporary access keys from the IAM Identity Center portal gives you **static** credentials that die with the role duration — often one hour. You and your agent lose access mid-task.
+Copying the temporary access keys from the IAM Identity Center portal gives you **static** credentials that die with the role duration - often one hour. You and your agent lose access mid-task.
 
 | Clock | Typical duration | Who renews it |
 |---|---|---|
 | Role credentials (permission set) | 1 h (Admin), 4 h, 8 h… | The AWS CLI and SDKs, automatically |
-| Identity Center portal session | As configured (8 h by default) | You: `awslogin` — one browser approval |
+| Identity Center portal session | As configured (8 h by default) | You: `awslogin` - one browser approval |
 
 With `rolehop`, one `awslogin` per organization unlocks every account and role in it for the whole portal session.
 
 ## Features
 
-- **Many organizations** — work, personal, clients: one `[[org]]` block each. Profiles are named `<org>-<account>-<role>`.
-- **Wizard with discovery** — `rolehop init` asks for the portal URL and discovers your accounts and permission sets.
-- **AI agent integration** — rules and hooks so agents choose profiles freely, never read credentials, and stop to ask for `awslogin` on expiry.
-- **Unattended runs** — `rolehop run --login --max 6h` checks the session covers the job before you walk away.
-- **Safe writes** — validated input, managed blocks only, atomic writes, backups, `0600`. Never writes tokens or keys.
-- **Zero dependencies** — Python standard library only.
+- **Many organizations** - work, personal, clients: one `[[org]]` block each. Profiles are named `<org>-<account>-<role>`.
+- **Wizard with discovery** - `rolehop init` asks for the portal URL and discovers your accounts and permission sets.
+- **AI agent integration** - rules and hooks so agents choose profiles freely, never read credentials, and stop to ask for `awslogin` on expiry.
+- **Unattended runs** - `rolehop run --login --max 6h` checks the session covers the job before you walk away.
+- **Safe writes** - validated input, managed blocks only, atomic writes, backups, `0600`. Never writes tokens or keys.
+- **Zero dependencies** - Python standard library only.
 
 ## Install
 
@@ -40,7 +40,7 @@ uv tool install rolehop        # or: pipx install rolehop
 rolehop setup
 ```
 
-Before the PyPI release, install from GitHub — the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
+Before the PyPI release, install from GitHub - the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
 uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
@@ -95,16 +95,16 @@ See the [configuration reference](https://escobarjsa.github.io/rolehop/guide/con
 |---|---|---|
 | Claude Code | `~/.claude/rules/aws.md` | ✅ + `deny` rules |
 | OpenAI Codex CLI | `~/.codex/AGENTS.md` | ✅ |
-| Kiro | `~/.kiro/steering/aws.md` | — |
+| Kiro | `~/.kiro/steering/aws.md` | - |
 | GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` | ✅ |
 | Gemini CLI | `~/.gemini/GEMINI.md` | ✅ |
 | Qwen Code | `~/.qwen/QWEN.md` | ✅ |
-| OpenCode · Amp · Pi · Devin Desktop | their `AGENTS.md` / `global_rules.md` | — |
-| Cursor | paste `rolehop agent rules` in Settings → Rules | — |
+| OpenCode · Amp · Pi · Devin Desktop | their `AGENTS.md` / `global_rules.md` | - |
+| Cursor | paste `rolehop agent rules` in Settings → Rules | - |
 
 ## Migrating from awsorg
 
-`rolehop` was named `awsorg` up to 1.2.0. Configuration, state, managed blocks and agent hooks are adopted automatically — see the [migration guide](https://escobarjsa.github.io/rolehop/reference/migrating-from-awsorg/).
+`rolehop` was named `awsorg` up to 1.2.0. Configuration, state, managed blocks and agent hooks are adopted automatically - see the [migration guide](https://escobarjsa.github.io/rolehop/reference/migrating-from-awsorg/).
 
 ## Development
 
@@ -117,7 +117,7 @@ uv build
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
+Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -53,7 +53,7 @@ Every change validates first and keeps timestamped backups of `orgs.toml` and `~
 
 !!! warning "Comments are not preserved"
 
-    The wizard rewrites `orgs.toml`. If you added comments by hand, they will be lost — a timestamped backup is written first.
+    The wizard rewrites `orgs.toml`. If you added comments by hand, they will be lost - a timestamped backup is written first.
 
 ## Discovering accounts and roles
 

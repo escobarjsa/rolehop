@@ -1,6 +1,6 @@
 # Quickstart
 
-This walkthrough takes about five minutes. You need the **AWS access portal URL** of your organization — the page you open to see your accounts, for example `https://acme.awsapps.com/start`.
+This walkthrough takes about five minutes. You need the **AWS access portal URL** of your organization - the page you open to see your accounts, for example `https://acme.awsapps.com/start`.
 
 ## 1. Run the wizard
 
@@ -20,7 +20,7 @@ It then starts a device-code login, and **discovers your accounts and permission
 
 !!! info "Nothing secret is stored"
 
-    The wizard reads the SSO access token from the AWS CLI cache **in memory only** to list your accounts. `orgs.toml` contains names, account IDs and role names — no secrets.
+    The wizard reads the SSO access token from the AWS CLI cache **in memory only** to list your accounts. `orgs.toml` contains names, account IDs and role names - no secrets.
 
 ## 2. Write the profiles
 
@@ -37,7 +37,7 @@ rolehop status
 rolehop list
 ```
 
-`awslogin` prints a code and a link. Open it in any browser — your laptop or your phone — confirm the code matches, and approve.
+`awslogin` prints a code and a link. Open it in any browser - your laptop or your phone - confirm the code matches, and approve.
 
 ## 4. Use a profile
 

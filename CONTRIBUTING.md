@@ -6,7 +6,7 @@ Thanks for your interest in improving rolehop! This guide explains how to set up
 
 - Be respectful. This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 - **Never include real credentials, account IDs, start URLs or SSO tokens** in issues, pull requests, tests or fixtures. Use the placeholder IDs already used in the tests (`111111111111`, `222222222222`, …).
-- Report security problems privately — see [SECURITY.md](SECURITY.md).
+- Report security problems privately - see [SECURITY.md](SECURITY.md).
 
 ## Development setup
 
@@ -21,7 +21,7 @@ uv run rolehop --help
 
 ## Checks
 
-Run these before opening a pull request — CI runs the same checks on Linux and macOS with Python 3.11–3.13:
+Run these before opening a pull request - CI runs the same checks on Linux and macOS with Python 3.11-3.13:
 
 ```bash
 uv run --group dev ruff check src tests     # lint

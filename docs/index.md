@@ -5,9 +5,9 @@ description: Auto-refreshing AWS IAM Identity Center profiles for many organizat
 
 # rolehop
 
-**Hop between AWS accounts and roles with one login a day — and let your AI coding agent do the same, safely.**
+**Hop between AWS accounts and roles with one login a day - and let your AI coding agent do the same, safely.**
 
-`rolehop` turns a small TOML file that describes your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles. It gives you a single command to log in (`awslogin`) and teaches AI coding agents — Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code and more — how to pick the right profile, and what to do when the SSO session ends.
+`rolehop` turns a small TOML file that describes your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles. It gives you a single command to log in (`awslogin`) and teaches AI coding agents - Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code and more - how to pick the right profile, and what to do when the SSO session ends.
 
 [Get started](getting-started/installation.md){ .md-button .md-button--primary }
 [View on GitHub](https://github.com/escobarjsa/rolehop){ .md-button }
@@ -26,7 +26,7 @@ description: Auto-refreshing AWS IAM Identity Center profiles for many organizat
 
     ---
 
-    Work, personal, clients — each Identity Center portal is one `[[org]]` block. Profiles are named `<org>-<account>-<role>`.
+    Work, personal, clients - each Identity Center portal is one `[[org]]` block. Profiles are named `<org>-<account>-<role>`.
 
 -   :lucide-bot:{ .lg .middle } **Built for AI agents**
 
@@ -56,16 +56,16 @@ description: Auto-refreshing AWS IAM Identity Center profiles for many organizat
 
 ## The problem
 
-Copying the temporary **access keys** from the IAM Identity Center portal gives you *static* credentials that die with the role duration — often one hour for an administrator permission set. You and your AI agent lose access in the middle of the work, and nothing renews them.
+Copying the temporary **access keys** from the IAM Identity Center portal gives you *static* credentials that die with the role duration - often one hour for an administrator permission set. You and your AI agent lose access in the middle of the work, and nothing renews them.
 
 ## The solution
 
 | Clock | Typical duration | Who renews it |
 |---|---|---|
 | Role credentials (permission set) | 1 h (Admin), 4 h, 8 h… | The AWS CLI and SDKs, automatically |
-| Identity Center portal session | As configured by your admin (8 h by default) | You: `awslogin` — one browser approval |
+| Identity Center portal session | As configured by your admin (8 h by default) | You: `awslogin` - one browser approval |
 
-With `rolehop`, the only thing that ever expires in practice is the portal session — and a single `awslogin` per organization unlocks **every** account and role in it.
+With `rolehop`, the only thing that ever expires in practice is the portal session - and a single `awslogin` per organization unlocks **every** account and role in it.
 
 ```console
 $ awslogin

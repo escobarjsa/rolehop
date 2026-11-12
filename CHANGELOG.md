@@ -55,7 +55,7 @@ First release as a Python package (as `awsorg`).
 - `awslogin` shipped as a package entry point.
 - `envrc --state-var` to choose the remote-state profile variable.
 
-### Inherited from the script versions (1.0–1.1)
+### Inherited from the script versions (1.0-1.1)
 - Declarative `sso-session` profiles for any number of organizations, `init` wizard with discovery through the AWS access portal API (standard library), `discover`, `status`, `login`, full validation, atomic writes, symlink support and backups.
 
 [1.5.0]: https://github.com/escobarjsa/rolehop/compare/v1.4.0...v1.5.0

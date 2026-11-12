@@ -27,7 +27,7 @@ $ awslogin
 ✓ personal: logged in · account 333333333333
 ```
 
-One login per organization unlocks **all** of its accounts and roles. Inside the portal session, the AWS CLI and SDKs renew each role's credentials whenever they expire — an Administrator role every hour, a ReadOnly role every eight — and nobody notices.
+One login per organization unlocks **all** of its accounts and roles. Inside the portal session, the AWS CLI and SDKs renew each role's credentials whenever they expire - an Administrator role every hour, a ReadOnly role every eight - and nobody notices.
 
 ## Checking the session
 

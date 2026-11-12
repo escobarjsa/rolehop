@@ -31,7 +31,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-if sys.version_info < (3, 11):  # noqa: UP036 — clear message when run on an old Python
+if sys.version_info < (3, 11):  # noqa: UP036 - clear message when run on an old Python
     sys.exit("rolehop requires Python 3.11 or later (for tomllib).")
 import tomllib  # noqa: E402
 
@@ -724,7 +724,7 @@ def _yes(prompt: str, default: bool = True) -> bool:
 def toml_dump(orgs: list[dict]) -> str:
     """Serialize orgs to orgs.toml text."""
     q = json.dumps
-    lines = ["# orgs.toml — AWS IAM Identity Center organizations for rolehop.",
+    lines = ["# orgs.toml - AWS IAM Identity Center organizations for rolehop.",
              "# Generated/updated by `rolehop init`. You can edit it by hand; then run `rolehop sync`.",
              "# Documentation: https://github.com/escobarjsa/rolehop", ""]
     for org in orgs:
@@ -1010,7 +1010,7 @@ def cmd_hook(args) -> int:
         if args.kind == "post-tool":
             return hooks.post_tool(args.format)
         return hooks.cwd_direnv()
-    except Exception:  # noqa: BLE001 — a hook must never break the agent's session
+    except Exception:  # noqa: BLE001 - a hook must never break the agent's session
         return 0
 
 

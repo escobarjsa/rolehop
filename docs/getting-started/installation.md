@@ -57,10 +57,10 @@ rolehop setup
 
 `setup` is an all-in-one, idempotent command. Each step can be re-run safely:
 
-1. **Shell** — adds `~/.local/bin` to your `PATH` (zsh, bash or fish) and the direnv hook if direnv is installed, inside a marked block with a backup of your rc file.
-2. **Organizations** — if `~/.config/rolehop/orgs.toml` does not exist, launches the interactive [wizard](quickstart.md).
-3. **Profiles** — writes your profiles into `~/.aws/config`, only inside managed blocks.
-4. **AI agents** — installs rules and hooks into the agents it detects.
+1. **Shell** - adds `~/.local/bin` to your `PATH` (zsh, bash or fish) and the direnv hook if direnv is installed, inside a marked block with a backup of your rc file.
+2. **Organizations** - if `~/.config/rolehop/orgs.toml` does not exist, launches the interactive [wizard](quickstart.md).
+3. **Profiles** - writes your profiles into `~/.aws/config`, only inside managed blocks.
+4. **AI agents** - installs rules and hooks into the agents it detects.
 
 !!! note "Open a new terminal"
 

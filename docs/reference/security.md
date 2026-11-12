@@ -11,7 +11,7 @@
 ## What `rolehop` does not do
 
 - It does not raise or change IAM Identity Center session durations.
-- It does not limit which roles an agent may use — choose the permission sets you grant your user accordingly, and use each agent's sandbox and permission features.
+- It does not limit which roles an agent may use - choose the permission sets you grant your user accordingly, and use each agent's sandbox and permission features.
 - It cannot keep an agent working with AWS after the portal session ends. That is a property of SSO, by design. Use pipelines with their own roles (OIDC) for unattended infrastructure changes.
 
 ## Reporting a vulnerability

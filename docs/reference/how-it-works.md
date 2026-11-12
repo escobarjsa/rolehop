@@ -33,8 +33,8 @@ flowchart TB
 
 ## The two clocks
 
-1. **Role credentials** — issued per permission set, with the duration your administrator configured (for example one hour for Administrator). With an `sso-session` that has the `sso:account:access` registration scope, the CLI holds a **refresh token** and silently obtains new role credentials whenever they expire.
-2. **Portal session** — the IAM Identity Center session started by `aws sso login`. When it ends, refresh stops working for every profile of that organization, and you run `awslogin` again.
+1. **Role credentials** - issued per permission set, with the duration your administrator configured (for example one hour for Administrator). With an `sso-session` that has the `sso:account:access` registration scope, the CLI holds a **refresh token** and silently obtains new role credentials whenever they expire.
+2. **Portal session** - the IAM Identity Center session started by `aws sso login`. When it ends, refresh stops working for every profile of that organization, and you run `awslogin` again.
 
 `rolehop` does not change either duration. It only makes sure you depend on the second one, and that humans and agents react correctly when it ends.
 
@@ -64,7 +64,7 @@ Small, non-secret JSON files in `~/.local/state/rolehop/<org>.json` record the t
 
 `init` and `discover` read the SSO access token from the AWS CLI cache file (`~/.aws/sso/cache/<sha1(session)>.json`) **in memory**, and call the AWS access portal REST API with the standard library:
 
-- `GET /assignment/accounts` — accounts you can access
-- `GET /assignment/roles` — permission sets per account
+- `GET /assignment/accounts` - accounts you can access
+- `GET /assignment/roles` - permission sets per account
 
 The token is never printed, logged or written anywhere.
