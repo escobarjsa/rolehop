@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 
+from rolehop.shellrc import find_block
+
 MD_BEGIN = "<!-- >>> rolehop (gestionado por rolehop, no editar) >>> -->"
 MD_END = "<!-- <<< rolehop <<< -->"
 LEGACY_HOOK_MARKERS = ("awsorg/hooks/aws-expired.sh", "awsorg/hooks/aws-cwd-direnv.sh")  # scripts del kit
@@ -122,12 +124,11 @@ class Changes:
 
 def _with_block(current: str, body: str) -> str:
     block = f"{MD_BEGIN}\n{body.rstrip()}\n{MD_END}\n"
-    if MD_BEGIN in current and MD_END in current:
+    if find_block(current, MD_BEGIN, MD_END):
         current = _drop(current, *LEGACY_MD)  # si también quedó el bloque antiguo, fuera
-    begin, end_mark = (MD_BEGIN, MD_END) if MD_BEGIN in current else LEGACY_MD
-    if begin in current and end_mark in current:
-        start = current.index(begin)
-        end = current.index(end_mark) + len(end_mark)
+    span = find_block(current, MD_BEGIN, MD_END) or find_block(current, *LEGACY_MD)
+    if span is not None:
+        start, end = span
         if current[end:end + 1] == "\n":
             end += 1
         return current[:start] + block + current[end:]
@@ -136,11 +137,9 @@ def _with_block(current: str, body: str) -> str:
 
 
 def _drop(current: str, begin: str, end_mark: str) -> str:
-    if begin not in current or end_mark not in current:
-        return current
-    start = current.index(begin)
-    end = current.index(end_mark) + len(end_mark)
-    return current[:start].rstrip("\n") + "\n" + current[end:].lstrip("\n")
+    while (span := find_block(current, begin, end_mark)) is not None:
+        current = current[:span[0]].rstrip("\n") + "\n" + current[span[1]:].lstrip("\n")
+    return current
 
 
 def _without_block(current: str) -> str:

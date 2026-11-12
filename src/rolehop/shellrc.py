@@ -49,12 +49,21 @@ def block_for(shell: str, with_direnv: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
+def find_block(text: str, begin: str, end: str) -> tuple[int, int] | None:
+    """(inicio, fin) del primer bloque begin…end bien formado (el final se busca después del inicio)."""
+    s = text.find(begin)
+    if s < 0:
+        return None
+    e = text.find(end, s + len(begin))
+    return None if e < 0 else (s, e + len(end))
+
+
 def _strip_managed(text: str, shell: str) -> str:
     """Texto del rc sin nuestros bloques (actual y del nombre anterior), para no contarnos a nosotros mismos."""
     text = text.replace(block_for(shell, True), "")
     for begin, end in ((MARK_BEGIN, MARK_END), LEGACY_MARKS):
-        if begin in text and end in text:
-            text = text[:text.index(begin)] + text[text.index(end) + len(end):]
+        while (span := find_block(text, begin, end)) is not None:
+            text = text[:span[0]] + text[span[1]:]
     return text
 
 
@@ -70,20 +79,17 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
     add_direnv = has_direnv and not already_direnv
     wanted = block_for(shell, add_direnv)
     msgs: list[str] = []
-    begin, end_mark = (MARK_BEGIN, MARK_END) if MARK_BEGIN in current else LEGACY_MARKS
-    if begin in current and end_mark in current:
-        start = current.index(begin)
-        end = current.index(end_mark) + len(end_mark)
+    span = find_block(current, MARK_BEGIN, MARK_END) or find_block(current, *LEGACY_MARKS)
+    if span is not None:
+        start, end = span
         if current[end:end + 1] == "\n":
             end += 1
         new = current[:start] + wanted + current[end:]
     else:
         sep = "" if not current or current.endswith("\n\n") else ("\n" if current.endswith("\n") else "\n\n")
         new = current + sep + wanted
-    lb, le = LEGACY_MARKS
-    if begin == MARK_BEGIN and lb in new and le in new:  # quedaba también el bloque antiguo: fuera
-        s, e = new.index(lb), new.index(le) + len(le)
-        new = new[:s].rstrip("\n") + "\n" + new[e:].lstrip("\n")
+    while (old := find_block(new, *LEGACY_MARKS)) is not None:  # quedaba también el bloque antiguo: fuera
+        new = new[:old[0]].rstrip("\n") + "\n" + new[old[1]:].lstrip("\n")
     if new == current:
         msgs.append(f"✓ {rc} ya tiene ~/.local/bin en el PATH" + (" y direnv" if has_direnv else ""))
         return msgs
@@ -100,4 +106,28 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
     on_path = any(str(d) in os.environ.get("PATH", "").split(os.pathsep) for d in bin_dirs())
     if not on_path:
         msgs.append(f"! Abre una terminal nueva (o ejecuta: exec {shell}) para que el PATH se aplique.")
+    return msgs
+
+
+def remove_shell_integration(home: Path | None = None) -> list[str]:
+    """Quita nuestro bloque (y el del nombre anterior) de los rc de zsh, bash y fish, con copia de seguridad."""
+    home = home or Path.home()
+    msgs = []
+    for shell in ("zsh", "bash", "fish"):
+        rc = rc_file(shell, home)
+        target = rc.resolve() if rc.is_symlink() else rc
+        if not target.exists():
+            continue
+        current = target.read_text()
+        new = current
+        for begin, end in ((MARK_BEGIN, MARK_END), LEGACY_MARKS):
+            while (span := find_block(new, begin, end)) is not None:
+                head, tail = new[:span[0]], new[span[1]:]
+                new = head.rstrip("\n") + ("\n" if head.strip() else "") + tail.lstrip("\n")
+        if new == current:
+            continue
+        backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
+        shutil.copy2(target, backup)
+        target.write_text(new)
+        msgs.append(f"✓ {rc}: bloque de rolehop quitado (copia: {backup.name})")
     return msgs

@@ -28,8 +28,18 @@
     ```bash
     uv tool install git+https://github.com/escobarjsa/rolehop
     # or pin a release
-    uv tool install git+https://github.com/escobarjsa/rolehop@v1.3.1
+    uv tool install git+https://github.com/escobarjsa/rolehop@v1.4.0
     ```
+
+=== "From a GitHub Release"
+
+    Every release attaches a ready-to-install wheel. No git needed:
+
+    ```bash
+    uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.4.0/rolehop-1.4.0-py3-none-any.whl
+    ```
+
+    See all versions on the [Releases page](https://github.com/escobarjsa/rolehop/releases).
 
 This installs two commands:
 
@@ -64,12 +74,24 @@ rolehop setup --no-agents        # skip AI agent integration
 rolehop setup --agent claude     # only this agent (repeatable)
 ```
 
-## Upgrade and uninstall
+## Upgrade
 
 ```bash
-uv tool upgrade rolehop            # upgrade
-rolehop agent uninstall --all      # remove agent rules and hooks
-uv tool uninstall rolehop          # remove the commands
+rolehop upgrade --check     # is there a newer release?
+rolehop upgrade             # install it, with the same installer you used
 ```
 
-Your `orgs.toml` and the profiles in `~/.aws/config` are left in place. Remove the managed blocks with `rolehop sync --prune` after emptying `orgs.toml`, or delete them by hand.
+`rolehop upgrade` reads the latest [GitHub Release](https://github.com/escobarjsa/rolehop/releases) and reinstalls from its wheel. Your configuration and profiles are untouched. Versions older than 1.4.0 do not have this command; upgrade them once by hand:
+
+```bash
+uv tool install --force https://github.com/escobarjsa/rolehop/releases/download/v1.4.0/rolehop-1.4.0-py3-none-any.whl
+```
+
+## Uninstall
+
+```bash
+rolehop uninstall           # profiles, agent rules and hooks, shell block, state and cached SSO tokens
+uv tool uninstall rolehop   # then remove the command
+```
+
+`orgs.toml` is kept so you can reinstall later; add `--purge` to delete it as well.

@@ -305,25 +305,30 @@ def conflicts(free_text: str, org: dict) -> list[str]:
 
 
 # --------------------------------------------------------------------------- sync
-def cmd_sync(args) -> int:
-    orgs = load_orgs()
-    current = AWS_CONFIG.read_text() if AWS_CONFIG.exists() else ""
-    free, blocks = split_blocks(current)
-    problems = {}
-    for org in orgs:
-        c = conflicts(free, org)
-        if c:
-            problems[org["name"]] = c
-    if problems:
-        print("✗ Hay secciones en tu config, fuera de los bloques de rolehop, que chocan con perfiles generados:",
-              file=sys.stderr)
-        for org, items in problems.items():
-            for it in items:
-                print(f"    [{org}] {it}", file=sys.stderr)
-        print("  Renómbralas o bórralas a mano (haz copia antes) y vuelve a ejecutar `rolehop sync`.",
-              file=sys.stderr)
-        return 2
+def drop_placeholder(text: str, token: str) -> str:
+    """Quita el marcador de posición de un bloque. Solo absorbe la línea EN BLANCO que lo separaba (nunca el
+    salto de línea de la línea anterior del usuario, para no pegarle la sección siguiente)."""
+    i = text.find(token)
+    if i < 0:
+        return text
+    head, tail = text[:i], text[i + len(token):]
+    if head.endswith("\n\n"):
+        head = head[:-1]
+    elif not head:
+        tail = tail.lstrip("\n")
+    return head + tail
 
+
+def plan_sync(orgs: list[dict], current: str, prune: bool = False,
+              prune_only: set[str] | frozenset[str] = frozenset()) -> tuple[str | None, list[str], dict]:
+    """Calcula el nuevo ~/.aws/config sin escribir nada. Devuelve (texto, bloques huérfanos conservados, conflictos).
+
+    Con conflictos el texto es None. Lanza ConfigError si los marcadores están rotos o el resultado no es INI válido.
+    """
+    free, blocks = split_blocks(current)
+    problems = {o["name"]: c for o in orgs if (c := conflicts(free, o))}
+    if problems:
+        return None, [], problems
     wanted = {o["name"]: render_block(o) for o in orgs}
     stale = [n for n in blocks if n not in wanted]
     new_free = free
@@ -337,27 +342,45 @@ def cmd_sync(args) -> int:
             if new_free and not new_free.endswith("\n\n"):
                 new_free += "\n"
             new_free += body + "\n"
+    kept = []
     for name in stale:
         token = f"\0ROLEHOP:{name}\0\n"
-        new_free = new_free.replace(token, "" if args.prune else blocks[name] + "\n", 1)
-    if stale and not args.prune:
-        print(f"! Bloques de orgs que ya no están en orgs.toml (se conservan; usa --prune para quitarlos): "
-              f"{', '.join(stale)}")
-
-    new_free = re.sub(r"\n{3,}", "\n\n", new_free)
-    total = sum(len(catalog([o])) for o in orgs)
-    if new_free == current:
-        print(f"✓ {AWS_CONFIG} ya está al día ({total} perfiles).")
-        return 0
+        if prune or name in prune_only:
+            new_free = drop_placeholder(new_free, token)
+        else:
+            new_free = new_free.replace(token, blocks[name] + "\n", 1)
+            kept.append(name)
     if "\0" in new_free:
-        print("✗ Error interno: el resultado contiene marcadores sin resolver. No se escribió nada.", file=sys.stderr)
-        return 2
+        raise ConfigError("error interno: el resultado contiene marcadores sin resolver. No se escribió nada.")
     import configparser
     try:
         configparser.RawConfigParser(strict=True, interpolation=None).read_string(new_free)
     except configparser.Error as exc:
-        print(f"✗ El resultado no sería un ~/.aws/config válido; no se escribió nada:\n  {exc}", file=sys.stderr)
+        raise ConfigError(f"el resultado no sería un ~/.aws/config válido; no se escribió nada: {exc}") from None
+    return new_free, kept, {}
+
+
+def cmd_sync(args) -> int:
+    orgs = load_orgs()
+    current = AWS_CONFIG.read_text() if AWS_CONFIG.exists() else ""
+    new_free, kept, problems = plan_sync(orgs, current, args.prune, set(getattr(args, "prune_only", None) or []))
+    if problems:
+        print("✗ Hay secciones en tu config, fuera de los bloques de rolehop, que chocan con perfiles generados:",
+              file=sys.stderr)
+        for org, items in problems.items():
+            for it in items:
+                print(f"    [{org}] {it}", file=sys.stderr)
+        print("  Renómbralas o bórralas a mano (haz copia antes) y vuelve a ejecutar `rolehop sync`.",
+              file=sys.stderr)
         return 2
+    assert new_free is not None
+    if kept:
+        print(f"! Bloques de orgs que ya no están en orgs.toml (se conservan; usa --prune para quitarlos): "
+              f"{', '.join(kept)}")
+    total = sum(len(catalog([o])) for o in orgs)
+    if new_free == current:
+        print(f"✓ {AWS_CONFIG} ya está al día ({total} perfiles).")
+        return 0
     if not args.quiet:
         diff = difflib.unified_diff(current.splitlines(True), new_free.splitlines(True),
                                     fromfile=str(AWS_CONFIG), tofile=f"{AWS_CONFIG} (nuevo)")
@@ -365,6 +388,13 @@ def cmd_sync(args) -> int:
     if args.dry_run:
         print("\n(dry-run: no se escribió nada)")
         return 0
+    write_aws_config(new_free)
+    print(f"✓ {AWS_CONFIG} actualizado: {total} perfiles en {len(orgs)} org(s).")
+    return 0
+
+
+def write_aws_config(text: str) -> None:
+    """Escribe ~/.aws/config de forma atómica (0600, fsync), con copia de seguridad y respetando symlinks."""
     target = AWS_CONFIG.resolve() if AWS_CONFIG.is_symlink() else AWS_CONFIG
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     if target.exists():
@@ -375,12 +405,10 @@ def cmd_sync(args) -> int:
     tmp = target.with_name(target.name + ".rolehop-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
-        fh.write(new_free)
+        fh.write(text)
         fh.flush()
         os.fsync(fh.fileno())
     os.replace(tmp, target)
-    print(f"✓ {AWS_CONFIG} actualizado: {total} perfiles en {len(orgs)} org(s).")
-    return 0
 
 
 # --------------------------------------------------------------------------- status / login
@@ -745,20 +773,24 @@ def _login_for_discovery(org: dict) -> bool:
     return rc == 0
 
 
+def _alias_for(ps: str, roles_map: dict) -> str:
+    """Alias de [org.roles] para un permission set; lo crea (sin chocar con otro) si no existe."""
+    alias = next((k for k, v in roles_map.items() if v == ps), None)
+    if alias is None:
+        alias = role_alias(ps)
+        if alias in roles_map:
+            alias = slug(ps)
+        base, n = alias, 2
+        while alias in roles_map:
+            alias, n = f"{base}-{n}", n + 1
+        roles_map[alias] = ps
+    return alias
+
+
 def _accounts_from_inventory(org_name: str, inv: list[dict], roles_map: dict, ask_names: bool) -> list[dict]:
     accounts, used = [], set()
     for acc in inv:
-        aliases = []
-        for ps in acc["roles"]:
-            alias = next((k for k, v in roles_map.items() if v == ps), None)
-            if alias is None:
-                alias = role_alias(ps)
-                while alias in roles_map and roles_map[alias] != ps:
-                    alias = slug(ps)
-                    if alias in roles_map:
-                        alias = f"{alias}-{len(roles_map)}"
-                roles_map[alias] = ps
-            aliases.append(alias)
+        aliases = [_alias_for(ps, roles_map) for ps in acc["roles"]]
         name = short_account_name(acc["name"], org_name)
         if ask_names:
             name = _ask(f"Nombre corto para '{acc['name']}' ({acc['id']})", name, NAME_RE.match,
@@ -1045,7 +1077,8 @@ def awslogin_main() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="rolehop", description=__doc__.split("\n\n")[0])
     ap.add_argument("--version", action="version", version=f"rolehop {VERSION}")
-    sub = ap.add_subparsers(dest="cmd", required=True, metavar="{setup,init,sync,login,status,list,run,agent,envrc,discover}")
+    sub = ap.add_subparsers(dest="cmd", required=True,
+                          metavar="{setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,upgrade,uninstall}")
 
     s = sub.add_parser("sync", help="escribe los perfiles en ~/.aws/config")
     s.add_argument("--dry-run", action="store_true")
@@ -1106,6 +1139,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_agent)
 
+    from rolehop import manage, upgrade
+    manage.register(sub)
+    upgrade.register(sub)
+
     s = sub.add_parser("hook")
     s.add_argument("kind", choices=["post-tool", "cwd"])
     s.add_argument("--format", default="claude", choices=["claude", "codex", "copilot", "gemini", "qwen", "text"])
@@ -1121,7 +1158,7 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(func=cmd_which_org)
 
     args = ap.parse_args(argv)
-    if args.cmd not in ("hook", "_mark", "_which-org") and not getattr(args, "dry_run", False):
+    if args.cmd not in ("hook", "_mark", "_which-org", "uninstall", "upgrade") and not getattr(args, "dry_run", False):
         try:
             for msg in migrate_legacy():
                 print(msg, file=sys.stderr)

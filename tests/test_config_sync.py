@@ -127,3 +127,13 @@ def test_envrc(sample, capsys):
     out = capsys.readouterr().out
     assert "export AWS_PROFILE=empresa-prod-admin" in out
     assert cli.main(["envrc", "no-existe"]) == 2
+
+
+def test_prune_no_deja_lineas_en_blanco_de_mas(sample):
+    cli, p = sample
+    p.aws.write_text("[default]\nregion = eu-west-1\n")
+    assert sync(cli) == 0
+    p.orgs.write_text(SAMPLE.replace('name = "empresa"', 'name = "otra"'))
+    assert sync(cli, "--prune") == 0
+    text = p.aws.read_text()
+    assert "rolehop:empresa" not in text and "\n\n\n" not in text and text.startswith("[default]\nregion = eu-west-1\n\n#")

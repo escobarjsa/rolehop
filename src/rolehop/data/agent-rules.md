@@ -10,7 +10,8 @@ El usuario trabaja con varias organizaciones de AWS IAM Identity Center gestiona
 - Al cambiar de cuenta o de rol, confirma con `AWS_PROFILE=<perfil> aws sts get-caller-identity`.
 - Al empezar un trabajo con AWS: `rolehop status` para ver qué organizaciones tienen sesión.
 - Si el repo tiene `.envrc`, su `AWS_PROFILE` es solo el valor por defecto; puedes usar otro en cada comando.
-- Si el usuario pide agregar una cuenta, un rol o una organización, indícale `rolehop init` (asistente) o edita `~/.config/rolehop/orgs.toml` y ejecuta `rolehop sync --quiet`.
+- Si el usuario pide agregar una organización, indícale `rolehop init` (asistente).
+- Si falta una cuenta o un rol, o un perfil falla con `ForbiddenException` (rol revocado), puedes ejecutar `rolehop refresh <org>`: recarga cuentas y roles desde el portal y solo agrega. Quitar perfiles (`rolehop refresh --prune`, `rolehop remove`) o desinstalar (`rolehop uninstall`) solo si el usuario lo pide.
 
 ## Prohibido
 

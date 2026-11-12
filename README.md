@@ -40,11 +40,14 @@ uv tool install rolehop        # or: pipx install rolehop
 rolehop setup
 ```
 
-Before the PyPI release, install from GitHub:
+Before the PyPI release, install from GitHub — the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
+uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.4.0/rolehop-1.4.0-py3-none-any.whl
 uv tool install git+https://github.com/escobarjsa/rolehop
 ```
+
+Upgrade later with `rolehop upgrade`; remove everything with `rolehop uninstall`.
 
 `rolehop setup` adds `~/.local/bin` to your `PATH`, runs the wizard if needed, writes your profiles and configures the AI agents it detects.
 
@@ -56,6 +59,9 @@ rolehop status                             # session per organization
 rolehop list                               # profile catalog
 AWS_PROFILE=acme-prod-admin aws s3 ls      # use a profile
 rolehop run --login --max 6h               # before leaving an agent working
+rolehop refresh --prune                    # your permissions changed
+rolehop remove acme-prod                   # drop a profile, an account or an org
+rolehop upgrade                            # update to the latest release
 ```
 
 Then tell your agent: *"use whatever AWS profiles and roles you need."*
