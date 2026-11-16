@@ -41,7 +41,7 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
         r = session.check_org(org)
         left = r.get("estimated_left_min")
         if not r["ok"]:
-            print(f"✗ {org['name']}: no session. Run: awslogin {org['name']}   (or use --login)")
+            print(f"✗ {org['name']}: no session. Run: rolehop login {org['name']}   (or use --login)")
             fail = True
         elif left is None:
             if yes:
@@ -65,7 +65,7 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
         return 75
     if not command:
         print(f"✓ Ready: the session will last ~{max_value}. You can leave your agent working.")
-        print("  If it expires earlier, you can approve the login from your phone (device code: awslogin).")
+        print("  If it expires earlier, you can approve the login from your phone (device code: rolehop login).")
         return 0
     print(f"→ Running: {' '.join(command)}")
     try:
@@ -76,6 +76,6 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
     blocked = [o["name"] for o in orgs if session.read_state(o["name"]).get("blocked")]
     if blocked:
         print(f"\n⚠ The AWS session ended during the work in: {' '.join(blocked)}")
-        print(f"  1) awslogin {' '.join(blocked)}")
+        print(f"  1) rolehop login {' '.join(blocked)}")
         print("  2) Resume your agent's conversation (in Claude Code: claude --continue).")
     return rc

@@ -17,14 +17,14 @@ def cached_token(session_name: str) -> str:
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
-        raise errors.PortalError(f"no active session for '{session_name}' (run: awslogin {session_name})") from None
+        raise errors.PortalError(f"no active session for '{session_name}' (run: rolehop login {session_name})") from None
     token, expires = data.get("accessToken"), data.get("expiresAt", "")
     if not token:
         raise errors.PortalError(f"SSO cache has no token for '{session_name}'")
     try:
         exp = dt.datetime.fromisoformat(expires.replace("Z", "+00:00").replace("UTC", "+00:00"))
         if exp <= dt.datetime.now(dt.UTC):
-            raise errors.PortalError(f"the token for '{session_name}' has expired (run: awslogin {session_name})")
+            raise errors.PortalError(f"the token for '{session_name}' has expired (run: rolehop login {session_name})")
     except ValueError:
         pass
     return token
@@ -43,7 +43,7 @@ def portal_get(region: str, path: str, token: str, params: dict) -> dict:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise errors.PortalError("the portal rejected the token (session expired); run: awslogin") from None
+            raise errors.PortalError("the portal rejected the token (session expired); run: rolehop login") from None
         raise errors.PortalError(f"HTTP error {exc.code} from the SSO portal") from None
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         raise errors.PortalError(f"could not reach the SSO portal: {exc}") from None

@@ -3,6 +3,11 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-11-16
+
+### Changed
+- `rolehop login` is now the documented command to sign in. Messages, hook instructions, agent rules, `doctor` fixes and the documentation say `rolehop login <org>`. `awslogin` stays as an identical shortcut, so existing habits and scripts keep working.
+
 ## [1.6.0] - 2026-11-16
 
 ### Added
@@ -74,6 +79,7 @@ First release as a Python package (as `awsorg`).
 ### Inherited from the script versions (1.0-1.1)
 - Declarative `sso-session` profiles for any number of organizations, `init` wizard with discovery through the AWS access portal API (standard library), `discover`, `status`, `login`, full validation, atomic writes, symlink support and backups.
 
+[1.7.0]: https://github.com/escobarjsa/rolehop/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/escobarjsa/rolehop/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/escobarjsa/rolehop/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/escobarjsa/rolehop/compare/v1.3.1...v1.4.0

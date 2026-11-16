@@ -89,7 +89,7 @@ def test_status_text_and_json(sample, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)[0]["account"] == "111"
     monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": False, "expired": True, "error": "x"})
     assert cli_.main(["status"]) == 1
-    assert "no session · run: awslogin acme" in capsys.readouterr().out
+    assert "no session · run: rolehop login acme" in capsys.readouterr().out
 
 
 def test_login_only_where_needed(sample, monkeypatch, capsys):
@@ -262,7 +262,7 @@ def test_runner_runs_the_command_and_reports_blocked_orgs(sample, monkeypatch, c
     monkeypatch.setattr(runner.subprocess, "run", fake)
     assert runner.run([], "1h", False, False, ["claude", "-p", "x"]) == 3
     out = capsys.readouterr().out
-    assert "The AWS session ended during the work in: acme" in out and "awslogin acme" in out
+    assert "The AWS session ended during the work in: acme" in out and "rolehop login acme" in out
 
     def missing(cmd):
         raise FileNotFoundError
@@ -287,9 +287,9 @@ def test_herdr_title(monkeypatch):
     monkeypatch.setenv("HERDR_PANE_ID", "p1")
     monkeypatch.setenv("HERDR_BIN_PATH", "/opt/herdr")
     monkeypatch.setattr(hooks.subprocess, "Popen", lambda args, **kw: calls.append(args))
-    hooks._herdr_title("⚠ AWS: run awslogin acme")
+    hooks._herdr_title("⚠ AWS: run rolehop login acme")
     hooks._herdr_title(None)
-    assert calls[0][-3:] == ["--title", "⚠ AWS: run awslogin acme", "p1"] and "--clear-title" in calls[1]
+    assert calls[0][-3:] == ["--title", "⚠ AWS: run rolehop login acme", "p1"] and "--clear-title" in calls[1]
 
 
 # --------------------------------------------------------------------------- doctor
@@ -300,7 +300,7 @@ def test_doctor_reports_and_fixes(sample, no_agents, monkeypatch, capsys):
     assert cli_.main(["doctor"]) == 0
     out = capsys.readouterr().out
     assert "✓ aws-cli          2.30.1" in out and "out of date" in out and "run: rolehop sync" in out
-    assert "AWS_ACCESS_KEY_ID" in out and "run: awslogin acme" in out and "no AI coding agents detected" in out
+    assert "AWS_ACCESS_KEY_ID" in out and "run: rolehop login acme" in out and "no AI coding agents detected" in out
     assert "AKIAEXAMPLE" not in out  # never echo secrets
     assert cli_.main(["sync", "--quiet"]) == 0
     capsys.readouterr()
@@ -383,3 +383,11 @@ def test_verbose_prints_debug_without_secrets(sample, monkeypatch, capsys):
     monkeypatch.setattr(ui, "VERBOSE", False)
     ui.debug("hidden")
     assert capsys.readouterr().err == ""
+
+
+def test_awslogin_is_a_shortcut_for_rolehop_login(monkeypatch):
+    seen = []
+    monkeypatch.setattr(cli, "main", lambda argv=None: seen.append(argv) or 0)
+    monkeypatch.setattr("sys.argv", ["awslogin", "acme", "--force"])
+    assert cli.awslogin_main() == 0
+    assert seen == [["login", "acme", "--force"]]

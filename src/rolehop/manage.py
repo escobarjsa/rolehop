@@ -216,7 +216,7 @@ def cmd_refresh(args) -> int:
             inventory = _read_portal(org)
             new_org, changes, removed = plan_refresh(org, inventory, args.prune)
         except errors.PortalError as exc:
-            print(f"✗ {org['name']}: could not read the access portal ({exc}). Run: awslogin {org['name']}  "
+            print(f"✗ {org['name']}: could not read the access portal ({exc}). Run: rolehop login {org['name']}  "
                   f"(or use --login)", file=sys.stderr)
             failed.append(org["name"])
             updated.append(org)

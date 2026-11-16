@@ -150,7 +150,7 @@ def test_hook_formats_per_agent(sample, capsys):
     hooks.post_tool("copilot", json.dumps({"toolName": "bash", "toolArgs": '{"command": "aws s3 ls"}',
                                            "toolResult": {"resultType": "failure", "textResultForLlm": expired}}))
     out = json.loads(capsys.readouterr().out)
-    assert "awslogin" in out["additionalContext"]
+    assert "rolehop login" in out["additionalContext"]
     # Gemini (combined output: must not fire on a generic ExpiredToken inside legitimate data)
     hooks.post_tool("gemini", json.dumps({"tool_name": "run_shell_command",
                                           "tool_input": {"command": "aws cloudtrail lookup-events"},

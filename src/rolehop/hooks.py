@@ -145,10 +145,10 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
         who = org or "<org>"
         if org:
             session.write_state(org, blocked=True, blocked_at=dt.datetime.now(dt.UTC).isoformat())
-        _herdr_title(f"⚠ AWS: run awslogin {who}")
+        _herdr_title(f"⚠ AWS: run rolehop login {who}")
         msg = (f"AWS SSO: the session for organization '{who}' has expired (profile: {profile or 'unknown'}). "
                f"STOP using AWS: do not retry, and do not switch to another profile to work around it. Ask the user "
-               f"to run this in their terminal: awslogin {who} . Meanwhile, you can continue with tasks that do not "
+               f"to run this in their terminal: rolehop login {who} . Meanwhile, you can continue with tasks that do not "
                f"use AWS. Once the user confirms, resume where you left off.")
         _emit(fmt, event, msg)
         return 0
