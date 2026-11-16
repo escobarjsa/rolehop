@@ -7,7 +7,7 @@ Subcommands:
   setup                        all-in-one: PATH, wizard if no config, profiles and AI agents
   init                         wizard: organizations, account and role discovery, orgs.toml
   sync [--dry-run] [--prune]   write the managed blocks to ~/.aws/config
-  login [org ...] [--force]    run aws sso login only where needed (also: awslogin)
+  login [org ...] [--force]    run aws sso login only where needed (shortcut: awslogin)
   status [org ...] [--json]    session status per org
   list [--json] [--org ORG]    catalog of available profiles
   run [--login] [--max 6h] [-- CMD]   check the session before leaving an agent to work
@@ -87,7 +87,7 @@ def cmd_status(args) -> int:
                 print(f"✓ {r['org']:<12} active session · account {r['account']} · "
                       f"{session.fmt_left(r.get('estimated_left_min'))} · checked with {r['probe_profile']}")
             else:
-                hint = f"run: awslogin {r['org']}" if r["expired"] else r["error"]
+                hint = f"run: rolehop login {r['org']}" if r["expired"] else r["error"]
                 print(f"✗ {r['org']:<12} no session · {hint}")
         if any(r["ok"] for r in results):
             print("  (Cached role credentials can show ✓ even after the portal session has ended.)")
@@ -283,7 +283,7 @@ def cmd_setup(args) -> int:
         if rc == 1 and not args.agents:
             print("  (no agents detected; install later with: rolehop agent install <agent>)")
     print("==> Done")
-    print('  Next: awslogin  ·  rolehop status  ·  tell your agent "use whatever AWS profiles and roles you need"')
+    print('  Next: rolehop login  ·  rolehop status  ·  tell your agent "use whatever AWS profiles and roles you need"')
     return 0
 
 
@@ -309,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--quiet", action="store_true", help="don't show the diff")
     s.set_defaults(func=cmd_sync)
 
-    s = sub.add_parser("login", help="run aws sso login only where needed")
+    s = sub.add_parser("login", help="run aws sso login only where needed (shortcut: awslogin)")
     s.add_argument("orgs", nargs="*")
     s.add_argument("--device", action="store_true", help="force the device code flow")
     s.add_argument("--force", action="store_true", help="log in even if a session exists")

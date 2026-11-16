@@ -22,7 +22,7 @@ def test_hook_detects_expiry_and_marks_blocked(sample, capsys):
                             "tool_input": {"command": "AWS_PROFILE=acme-prod-admin aws s3 ls"},
                             "error": f"Exit code 255\n{EXPIRED}"})
     ctx = out["hookSpecificOutput"]["additionalContext"]
-    assert "awslogin acme" in ctx
+    assert "rolehop login acme" in ctx
     assert out["hookSpecificOutput"]["hookEventName"] == "PostToolUseFailure"
     assert session.read_state("acme")["blocked"] is True
 
@@ -57,7 +57,7 @@ def test_hook_invalid_json_does_not_fail(sample):
 def test_hook_generic_format(sample, capsys):
     out = run_hook(capsys, {"tool_name": "shell", "tool_input": {"command": "terraform plan"},
                             "error": EXPIRED}, fmt="text")
-    assert "awslogin" in out
+    assert "rolehop login" in out
 
 
 def test_parse_minutes():

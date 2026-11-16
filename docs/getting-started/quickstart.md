@@ -32,12 +32,12 @@ rolehop sync             # apply
 ## 3. Log in and check
 
 ```bash
-awslogin
+rolehop login
 rolehop status
 rolehop list
 ```
 
-`awslogin` prints a code and a link. Open it in any browser - your laptop or your phone - confirm the code matches, and approve.
+`rolehop login` prints a code and a link. Open it in any browser - your laptop or your phone - confirm the code matches, and approve.
 
 ## 4. Use a profile
 
@@ -54,7 +54,7 @@ If you ran `rolehop setup`, your agents already know. Just say:
 
 > *Use whatever AWS profiles and roles you need.*
 
-or name the target: *"list the buckets in prod"*. The agent picks `acme-prod-…`, says which profile it used, and asks you to run `awslogin acme` if the session ends.
+or name the target: *"list the buckets in prod"*. The agent picks `acme-prod-…`, says which profile it used, and asks you to run `rolehop login acme` if the session ends.
 
 ## Next steps
 

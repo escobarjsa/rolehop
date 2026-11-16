@@ -4,24 +4,24 @@
 
 | Situation | Command |
 |---|---|
-| Start the day | `awslogin` |
+| Start the day | `rolehop login` |
 | See every profile | `rolehop list` |
 | See session status per organization | `rolehop status` |
 | Use a profile | `AWS_PROFILE=acme-prod-admin aws s3 ls` |
-| Log in to one organization | `awslogin acme` |
-| Renew now, even with a live session | `awslogin --force` |
+| Log in to one organization | `rolehop login acme` |
+| Renew now, even with a live session | `rolehop login --force` |
 | Before leaving an agent working | `rolehop run --login --max 6h` |
 
 ## Morning login
 
 ```bash
-awslogin
+rolehop login
 ```
 
-`awslogin` checks each organization and runs `aws sso login --sso-session <org>` **only where needed**. Organizations that already have a session are skipped:
+`rolehop login` checks each organization and runs `aws sso login --sso-session <org>` **only where needed**. Organizations that already have a session are skipped:
 
 ```console
-$ awslogin
+$ rolehop login
 ✓ acme: already has a session (~6h40m estimated). Use --force to renew it.
 → personal: aws sso login --sso-session personal --use-device-code
 ✓ personal: logged in · account 333333333333
@@ -40,18 +40,18 @@ rolehop status --json   # for scripts and agents
 
 !!! warning "The remaining time is an estimate"
 
-    AWS does not expose when a portal session ends. `rolehop` estimates it from the time of your last `awslogin` and `portal_session_hours` in `orgs.toml`.
+    AWS does not expose when a portal session ends. `rolehop` estimates it from the time of your last `rolehop login` and `portal_session_hours` in `orgs.toml`.
 
 ## When the session ends
 
 You will see errors like `Token has expired and refresh failed` or `The SSO session associated with this profile has expired`. Run:
 
 ```bash
-awslogin <org>
+rolehop login <org>
 ```
 
-and continue. If an AI agent hits the error, its hook marks the organization as blocked and the agent asks you to log in; the next `awslogin` logs in straight away without probing.
+and continue. If an AI agent hits the error, its hook marks the organization as blocked and the agent asks you to log in; the next `rolehop login` logs in straight away without probing.
 
 ## Approving from your phone
 
-`awslogin` uses the **device code** flow by default (ideal for WSL, SSH and remote terminals). The verification link works in any browser, so you can approve a login from your phone when you are away from your desk.
+`rolehop login` uses the **device code** flow by default (ideal for WSL, SSH and remote terminals). The verification link works in any browser, so you can approve a login from your phone when you are away from your desk.

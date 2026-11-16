@@ -8,7 +8,7 @@
 flowchart TB
     subgraph You
         T[orgs.toml]
-        L[awslogin]
+        L[rolehop login]
     end
     subgraph rolehop
         S[rolehop sync]
@@ -34,7 +34,7 @@ flowchart TB
 ## The two clocks
 
 1. **Role credentials** - issued per permission set, with the duration your administrator configured (for example one hour for Administrator). With an `sso-session` that has the `sso:account:access` registration scope, the CLI holds a **refresh token** and silently obtains new role credentials whenever they expire.
-2. **Portal session** - the IAM Identity Center session started by `aws sso login`. When it ends, refresh stops working for every profile of that organization, and you run `awslogin` again.
+2. **Portal session** - the IAM Identity Center session started by `aws sso login`. When it ends, refresh stops working for every profile of that organization, and you run `rolehop login` again.
 
 `rolehop` does not change either duration. It only makes sure you depend on the second one, and that humans and agents react correctly when it ends.
 

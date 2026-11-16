@@ -1,9 +1,9 @@
 # orgs.toml: AWS IAM Identity Center organizations managed by rolehop.
 # Copy this file to ~/.config/rolehop/orgs.toml and edit it. It contains no secrets.
-# Then: `rolehop sync --dry-run` to review, `rolehop sync` to apply and `awslogin` to sign in.
+# Then: `rolehop sync --dry-run` to review, `rolehop sync` to apply and `rolehop login` to sign in.
 #
 # Each [[org]] generates:
-#   [sso-session <name>]                      → one login per org (awslogin <name>)
+#   [sso-session <name>]                      → one login per org (rolehop login <name>)
 #   [profile <name>-<account>-<role>]         → one profile per account and role
 #   [profile <name>-<assume_role.name>]       → optional chained profiles
 #

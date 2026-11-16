@@ -4,7 +4,7 @@
 
 - **Choose freely.** Pick whatever profile and role the task needs - Admin included - read the catalog with `rolehop list`, and say which profile was used.
 - **Never touch credentials.** Do not read `~/.aws`, export keys, or paste portal access keys.
-- **Stop on expiry.** When the SSO session ends, stop retrying, do not switch to another profile to work around it, and ask the user to run `awslogin <org>`.
+- **Stop on expiry.** When the SSO session ends, stop retrying, do not switch to another profile to work around it, and ask the user to run `rolehop login <org>`.
 - **Unattended work.** Before the user leaves, ask them to run `rolehop run --login --max <duration>`. Infrastructure changes go through PRs and pipelines.
 
 ## Commands
@@ -42,7 +42,7 @@ flowchart LR
     A[Agent runs aws / terraform / …] --> B{Output contains an<br/>SSO expiry error?}
     B -- no --> C[Command succeeded:<br/>clear the blocked mark]
     B -- yes --> D[Mark org as blocked]
-    D --> E[Inject: stop and ask for<br/>awslogin &lt;org&gt;]
+    D --> E[Inject: stop and ask for<br/>rolehop login &lt;org&gt;]
     D --> F[Flag the terminal pane<br/>Herdr, if present]
 ```
 

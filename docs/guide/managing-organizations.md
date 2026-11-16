@@ -4,7 +4,7 @@
 
 | I want to… | Do this |
 |---|---|
-| Add another organization | `rolehop init` → option **1** (add an organization) → `rolehop sync` → `awslogin <org>` |
+| Add another organization | `rolehop init` → option **1** (add an organization) → `rolehop sync` → `rolehop login <org>` |
 | Pick up accounts or roles I was just granted | `rolehop refresh` |
 | Drop accounts or roles that were revoked | `rolehop refresh --prune` |
 | See the real accounts and roles in the portal | `rolehop discover <org>` (requires a session) |
@@ -22,7 +22,7 @@ rolehop refresh               # add new accounts and roles, keep revoked ones (r
 rolehop refresh --prune       # also remove what was revoked (asks for confirmation)
 ```
 
-`refresh` uses your current session (run `awslogin` first, or add `--login`), never asks questions, and runs `sync` for you. Revoked roles are only removed with `--prune`, and roles that are the `source` of a chained role are always kept.
+`refresh` uses your current session (run `rolehop login` first, or add `--login`), never asks questions, and runs `sync` for you. Revoked roles are only removed with `--prune`, and roles that are the `source` of a chained role are always kept.
 
 ```console
 $ rolehop refresh --prune

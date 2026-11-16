@@ -8,7 +8,7 @@ When you leave an agent working for hours, the AWS portal session is the only th
 rolehop run --login --max 6h
 ```
 
-1. `--login` renews the session now (`awslogin --force`), so the full portal window starts from this moment.
+1. `--login` renews the session now (`rolehop login --force`), so the full portal window starts from this moment.
 2. `rolehop` checks that every organization has at least `--max` plus a 15-minute margin left.
 3. If the window is too short, it tells you the maximum possible and suggests splitting the work.
 
@@ -33,7 +33,7 @@ It checks the session, runs the command and, at the end, reports any organizatio
 
 ```text
 ⚠ The AWS session ended during the work in: acme
-  1) awslogin acme
+  1) rolehop login acme
   2) Resume your agent's conversation (in Claude Code: claude --continue).
 ```
 

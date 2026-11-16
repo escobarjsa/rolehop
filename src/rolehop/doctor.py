@@ -66,7 +66,8 @@ def run_checks(online: bool = False) -> list[Check]:
     if not exe:
         checks.append(Check("path", "warn", "`rolehop` is not on PATH", "run: rolehop setup, then open a new terminal"))
     elif not login:
-        checks.append(Check("path", "warn", "`awslogin` is not on PATH", "reinstall: uv tool install --force rolehop"))
+        checks.append(Check("path", "warn", "the `awslogin` shortcut is not on PATH",
+                            "reinstall: uv tool install --force rolehop"))
     elif Path(login).resolve().parent != Path(exe).resolve().parent:
         checks.append(Check("path", "warn", f"`awslogin` resolves to {login}, not next to rolehop (an old copy?)",
                             f"remove {login} or reinstall rolehop with --force"))
@@ -113,17 +114,17 @@ def run_checks(online: bool = False) -> list[Check]:
             if r["ok"]:
                 checks.append(Check(f"session:{name}", "ok", f"active · {session.fmt_left(r.get('estimated_left_min'))}"))
             else:
-                checks.append(Check(f"session:{name}", "warn", r.get("error") or "no session", f"run: awslogin {name}"))
+                checks.append(Check(f"session:{name}", "warn", r.get("error") or "no session", f"run: rolehop login {name}"))
             continue
         if session.read_state(name).get("blocked"):
             checks.append(Check(f"session:{name}", "warn", "a recent command saw the session expire",
-                                f"run: awslogin {name}"))
+                                f"run: rolehop login {name}"))
             continue
         try:
             portal.cached_token(name)
             checks.append(Check(f"session:{name}", "ok", "cached SSO token is valid"))
         except errors.PortalError as exc:
-            checks.append(Check(f"session:{name}", "warn", str(exc), f"run: awslogin {name}"))
+            checks.append(Check(f"session:{name}", "warn", str(exc), f"run: rolehop login {name}"))
 
     shell = shellrc.detect_shell()
     rc = shellrc.rc_file(shell, Path.home())

@@ -7,7 +7,7 @@
 
 **Hop between AWS accounts and roles with one login a day - and let your AI coding agent do the same, safely.**
 
-`rolehop` turns a small TOML file describing your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles in `~/.aws/config`. It gives you a one-command login (`awslogin`) and teaches AI coding agents - Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code, OpenCode, Amp and more - how to pick profiles, and what to do when the SSO session expires.
+`rolehop` turns a small TOML file describing your AWS IAM Identity Center organizations, accounts and roles into native, auto-refreshing `sso-session` profiles in `~/.aws/config`. It gives you a one-command login (`rolehop login`, or its `awslogin` shortcut) and teaches AI coding agents - Claude Code, Codex, Kiro, Copilot CLI, Gemini CLI, Qwen Code, OpenCode, Amp and more - how to pick profiles, and what to do when the SSO session expires.
 
 **Documentation:** <https://escobarjsa.github.io/rolehop/>
 
@@ -18,15 +18,15 @@ Copying the temporary access keys from the IAM Identity Center portal gives you 
 | Clock | Typical duration | Who renews it |
 |---|---|---|
 | Role credentials (permission set) | 1 h (Admin), 4 h, 8 h… | The AWS CLI and SDKs, automatically |
-| Identity Center portal session | As configured (8 h by default) | You: `awslogin` - one browser approval |
+| Identity Center portal session | As configured (8 h by default) | You: `rolehop login` - one browser approval |
 
-With `rolehop`, one `awslogin` per organization unlocks every account and role in it for the whole portal session.
+With `rolehop`, one `rolehop login` per organization unlocks every account and role in it for the whole portal session.
 
 ## Features
 
 - **Many organizations** - work, personal, clients: one `[[org]]` block each. Profiles are named `<org>-<account>-<role>`.
 - **Wizard with discovery** - `rolehop init` asks for the portal URL and discovers your accounts and permission sets.
-- **AI agent integration** - rules and hooks so agents choose profiles freely, never read credentials, and stop to ask for `awslogin` on expiry.
+- **AI agent integration** - rules and hooks so agents choose profiles freely, never read credentials, and stop to ask for `rolehop login` on expiry.
 - **Unattended runs** - `rolehop run --login --max 6h` checks the session covers the job before you walk away.
 - **Safe writes** - validated input, managed blocks only, atomic writes, backups, `0600`. Never writes tokens or keys.
 - **Zero dependencies** - Python standard library only.
@@ -43,7 +43,7 @@ rolehop setup
 Before the PyPI release, install from GitHub - the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
-uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.6.0/rolehop-1.6.0-py3-none-any.whl
+uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.7.0/rolehop-1.7.0-py3-none-any.whl
 uv tool install git+https://github.com/escobarjsa/rolehop
 ```
 
@@ -54,7 +54,7 @@ Upgrade later with `rolehop upgrade`, check the installation with `rolehop docto
 ## Usage
 
 ```bash
-awslogin                                   # start the day
+rolehop login                                   # start the day
 rolehop status                             # session per organization
 rolehop list                               # profile catalog
 AWS_PROFILE=acme-prod-admin aws s3 ls      # use a profile
