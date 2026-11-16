@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import subprocess
 
+from rolehop import config, session
+
 MARGIN_MIN = 15
 
 
@@ -27,7 +29,7 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
         print(f"✗ Invalid duration: {max_value} (use 90m, 3h, 1h30m)")
         return 2
     need = max_min + MARGIN_MIN
-    orgs = cli.select(cli.load_orgs(), orgs_names)
+    orgs = config.select(config.load_orgs(), orgs_names)
     if login:
         print("→ Renewing the session so the full window starts now…")
         rc = cli.cmd_login(type("A", (), {"orgs": [o["name"] for o in orgs], "force": True, "device": False})())
@@ -36,7 +38,7 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
             return 1
     fail = False
     for org in orgs:
-        r = cli.check_org(org)
+        r = session.check_org(org)
         left = r.get("estimated_left_min")
         if not r["ok"]:
             print(f"✗ {org['name']}: no session. Run: awslogin {org['name']}   (or use --login)")
@@ -71,7 +73,7 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
     except FileNotFoundError:
         print(f"✗ Command not found: {command[0]}")
         return 127
-    blocked = [o["name"] for o in orgs if cli.read_state(o["name"]).get("blocked")]
+    blocked = [o["name"] for o in orgs if session.read_state(o["name"]).get("blocked")]
     if blocked:
         print(f"\n⚠ The AWS session ended during the work in: {' '.join(blocked)}")
         print(f"  1) awslogin {' '.join(blocked)}")

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rolehop"
-version = "1.5.0"
+version = "1.6.0"
 description = "Auto-refreshing AWS IAM Identity Center profiles for many organizations, ready for humans and AI coding agents (Claude Code, Codex, Kiro, Gemini…)."
 readme = "README.md"
 license = "MIT"
@@ -42,7 +42,7 @@ rolehop = "rolehop.cli:main"
 awslogin = "rolehop.cli:awslogin_main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "mypy>=1.10"]
 docs = ["zensical>=0.1"]
 
 [tool.hatch.build.targets.wheel]
@@ -54,6 +54,26 @@ include = ["src/rolehop", "tests", "README.md", "LICENSE", "CHANGELOG.md", "SECU
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.coverage.run]
+source = ["rolehop"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_also = ["if __name__ == .__main__.:", "if sys.version_info < "]
+
+[tool.mypy]
+files = ["src/rolehop"]
+python_version = "3.11"
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = false
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
 
 [tool.ruff]
 line-length = 130

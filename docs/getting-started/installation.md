@@ -28,7 +28,7 @@
     ```bash
     uv tool install git+https://github.com/escobarjsa/rolehop
     # or pin a release
-    uv tool install git+https://github.com/escobarjsa/rolehop@v1.5.0
+    uv tool install git+https://github.com/escobarjsa/rolehop@v1.6.0
     ```
 
 === "From a GitHub Release"
@@ -36,7 +36,7 @@
     Every release attaches a ready-to-install wheel. No git needed:
 
     ```bash
-    uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
+    uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.6.0/rolehop-1.6.0-py3-none-any.whl
     ```
 
     See all versions on the [Releases page](https://github.com/escobarjsa/rolehop/releases).
@@ -74,6 +74,36 @@ rolehop setup --no-agents        # skip AI agent integration
 rolehop setup --agent claude     # only this agent (repeatable)
 ```
 
+## Shell completion
+
+=== "zsh"
+
+    ```bash
+    echo 'eval "$(rolehop completion zsh)"' >> ~/.zshrc
+    ```
+
+=== "bash"
+
+    ```bash
+    echo 'eval "$(rolehop completion bash)"' >> ~/.bashrc
+    ```
+
+=== "fish"
+
+    ```bash
+    rolehop completion fish > ~/.config/fish/completions/rolehop.fish
+    ```
+
+Open a new terminal. `rolehop <Tab>` completes subcommands and flags, and `awslogin <Tab>`, `rolehop status <Tab>` or `rolehop remove <Tab>` complete your organizations, accounts and profiles.
+
+## Check the installation
+
+```bash
+rolehop doctor
+```
+
+It reports anything that is missing or out of date and prints the command that fixes it.
+
 ## Upgrade
 
 ```bash
@@ -81,10 +111,19 @@ rolehop upgrade --check     # is there a newer release?
 rolehop upgrade             # install it, with the same installer you used
 ```
 
-`rolehop upgrade` reads the latest [GitHub Release](https://github.com/escobarjsa/rolehop/releases) and reinstalls from its wheel. Your configuration and profiles are untouched. Versions older than 1.4.0 do not have this command; upgrade them once by hand:
+`rolehop upgrade` reads the latest [GitHub Release](https://github.com/escobarjsa/rolehop/releases), verifies the wheel's SHA-256 and reinstalls from the verified file. Your configuration and profiles are untouched. Versions older than 1.4.0 do not have this command; upgrade them once by hand:
 
 ```bash
-uv tool install --force https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
+uv tool install --force https://github.com/escobarjsa/rolehop/releases/download/v1.6.0/rolehop-1.6.0-py3-none-any.whl
+```
+
+## Verify a release
+
+Every release ships a `SHA256SUMS` file and a signed [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) that proves the files were built by this repository's release workflow:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify rolehop-1.6.0-py3-none-any.whl --repo escobarjsa/rolehop
 ```
 
 ## Uninstall

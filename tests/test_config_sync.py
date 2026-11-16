@@ -8,6 +8,7 @@ import os
 import pytest
 
 from conftest import SAMPLE
+from rolehop import config
 
 
 def sync(cli, *extra):
@@ -120,9 +121,9 @@ def test_prune(sample):
 
 def test_probe_honors_default_role(sample):
     cli, _ = sample
-    org = cli.load_orgs()[0]
+    org = config.load_orgs()[0]
     org["default_role"] = "ro"
-    assert cli.probe_profile(org) == "acme-devsecops-ro"
+    assert config.probe_profile(org) == "acme-devsecops-ro"
 
 
 def test_envrc(sample, capsys):

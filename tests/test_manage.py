@@ -12,6 +12,7 @@ from test_wizard_discover import Portal, portal  # noqa: F401  (reused fixture)
 
 from conftest import SAMPLE
 from rolehop import agents, manage, shellrc
+from rolehop import awsconfig, config, errors, session
 
 TWO_ORGS = SAMPLE + textwrap.dedent("""
     [[org.assume_roles]]
@@ -44,7 +45,7 @@ def profiles(p) -> set[str]:
 def live(portal, monkeypatch):  # noqa: F811
     """Mocked access portal + active session (without calling the real AWS CLI)."""
     cli, p = portal
-    monkeypatch.setattr(cli, "check_org", lambda org: {"ok": True, "org": org["name"]})
+    monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "org": org["name"]})
     p.orgs.write_text(SAMPLE)
     assert cli.main(["sync", "--quiet"]) == 0
     return cli, p
@@ -53,7 +54,7 @@ def live(portal, monkeypatch):  # noqa: F811
 # --------------------------------------------------------------------------- refresh
 def test_plan_refresh_adds_and_flags_revoked_without_prune(sample):
     cli, _ = sample
-    org = cli.load_orgs()[0]
+    org = config.load_orgs()[0]
     inv = [{"id": "111111111111", "name": "devsecops", "roles": ["Administrator", "PowerUser"]},
            {"id": "999999999999", "name": "acme-new", "roles": ["ReadOnly"]}]
     new, changes, removed = manage.plan_refresh(org, inv, prune=False)
@@ -71,7 +72,7 @@ def test_plan_refresh_adds_and_flags_revoked_without_prune(sample):
 def test_plan_refresh_prune_keeps_assume_role_sources(sample):
     cli, p = sample
     p.orgs.write_text(TWO_ORGS)
-    org = cli.load_orgs()[0]
+    org = config.load_orgs()[0]
     inv = [{"id": "222222222222", "name": "prod", "roles": ["Administrator"]}]  # devsecops is gone
     new, changes, removed = manage.plan_refresh(org, inv, prune=True)
     assert removed == {"acme-devsecops-ro"}
@@ -150,14 +151,14 @@ def test_remove_org_deletes_block_state_and_token(two):
     p.cache.mkdir(parents=True, exist_ok=True)
     token = p.cache / f"{hashlib.sha1(b'personal').hexdigest()}.json"
     token.write_text(json.dumps({"accessToken": "x"}))
-    cli.write_state("personal", last_login="2026-01-01T00:00:00+00:00")
+    session.write_state("personal", last_login="2026-01-01T00:00:00+00:00")
     assert cli.main(["remove", "personal", "--dry-run"]) == 0
     assert token.exists() and "personal-main-admin" in profiles(p)
     assert cli.main(["remove", "personal", "--yes"]) == 0
     text = p.aws.read_text()
     assert "rolehop:personal" not in text and "[sso-session personal]" not in text and "rolehop:acme" in text
-    assert not token.exists() and not cli.state_file("personal").exists()
-    assert [o["name"] for o in cli.load_orgs()] == ["acme"]
+    assert not token.exists() and not session.state_file("personal").exists()
+    assert [o["name"] for o in config.load_orgs()] == ["acme"]
 
 
 def test_remove_requires_confirmation_without_tty(two, monkeypatch):
@@ -186,7 +187,7 @@ def test_uninstall_cleans_everything_and_keeps_config(sample, monkeypatch, capsy
     agents.install(agents.AGENTS["claude"], p.home, ch)
     (p.home / ".zshrc").write_text("# mine\n")
     shellrc.ensure_shell_integration(home=p.home, shell="zsh")
-    cli.write_state("acme", last_login="2026-01-01T00:00:00+00:00")
+    session.write_state("acme", last_login="2026-01-01T00:00:00+00:00")
 
     assert cli.main(["uninstall", "--dry-run"]) == 0
     assert "rolehop:acme" in p.aws.read_text()
@@ -197,7 +198,7 @@ def test_uninstall_cleans_everything_and_keeps_config(sample, monkeypatch, capsy
     assert not (p.home / ".claude/rules/aws.md").exists()
     settings = json.loads((p.home / ".claude/settings.json").read_text())
     assert "hooks" not in settings and not settings.get("permissions", {}).get("deny")
-    assert not cli.state_file("acme").exists()
+    assert not session.state_file("acme").exists()
     assert p.orgs.exists() and "uv tool uninstall rolehop" in capsys.readouterr().out
 
     assert cli.main(["uninstall", "--yes", "--purge"]) == 0
@@ -207,7 +208,7 @@ def test_uninstall_cleans_everything_and_keeps_config(sample, monkeypatch, capsy
 def test_refresh_works_even_if_probe_profile_fails(live, monkeypatch):
     """The probe_profile role may be the revoked one: refresh does not depend on it if the token is valid."""
     cli, p = live
-    monkeypatch.setattr(cli, "check_org", lambda org: {"ok": False, "error": "ForbiddenException"})
+    monkeypatch.setattr(session, "check_org", lambda org: {"ok": False, "error": "ForbiddenException"})
     assert cli.main(["refresh"]) == 0
     assert "acme-devsecops-power" in profiles(p)
 
@@ -225,18 +226,18 @@ def test_refresh_does_not_rename_roles_written_with_exact_name(sample):
         id = "111111111111"
         roles = ["AdministratorAccess"]
     """))
-    org = cli.load_orgs()[0]
+    org = config.load_orgs()[0]
     inv = [{"id": "111111111111", "name": "dev", "roles": ["AdministratorAccess"]},
            {"id": "222222222222", "name": "prod", "roles": ["AdministratorAccess", "ReadOnly"]}]
     new, changes, _ = manage.plan_refresh(org, inv, prune=False)
-    got = {r["profile"] for r in cli.catalog([new])}
+    got = {r["profile"] for r in config.catalog([new])}
     assert "e-dev-administratoraccess" in got and "e-prod-administratoraccess" in got and "e-prod-ro" in got
 
 
 def test_refresh_prune_with_empty_portal_or_emptied_org(sample):
     cli, _ = sample
-    org = cli.load_orgs()[0]
-    with pytest.raises(cli.ConfigError, match="returned no accounts"):
+    org = config.load_orgs()[0]
+    with pytest.raises(errors.ConfigError, match="returned no accounts"):
         manage.plan_refresh(org, [], prune=True)
     inv = [{"id": "111111111111", "name": "devsecops", "roles": ["Billing"]}]  # everything known is revoked
     new, _, _ = manage.plan_refresh(org, inv, prune=True)  # the account keeps the new role: valid
@@ -295,10 +296,10 @@ def test_remove_ambiguous_name_and_prefixes(sample):
         roles = ["admin"]
     """))
     assert cli.main(["sync", "--quiet"]) == 0
-    with pytest.raises(cli.ConfigError, match="ambiguous"):
-        manage._resolve(cli.load_orgs(), "acme-prod")
+    with pytest.raises(errors.ConfigError, match="ambiguous"):
+        manage._resolve(config.load_orgs(), "acme-prod")
     # 'prod' is not a source of anything even though 'prod-eu-admin' shares its prefix
-    kind, org, acc = manage._resolve(cli.load_orgs(), "acme-prod-admin")
+    kind, org, acc = manage._resolve(config.load_orgs(), "acme-prod-admin")
     assert kind == "profile"
     assert cli.main(["remove", "acme-prod-eu-admin", "--yes"]) == 2  # it is the source of 'deploy'
 
@@ -306,7 +307,7 @@ def test_remove_ambiguous_name_and_prefixes(sample):
 def test_alias_for_does_not_loop(sample):
     cli, _ = sample
     roles = {"data-analyst": "Data-Analyst", "data-analyst-2": "Data.Analyst"}
-    assert cli._alias_for("Data_Analyst", roles) == "data-analyst-3"
+    assert config.alias_for("Data_Analyst", roles) == "data-analyst-3"
 
 
 def test_shellrc_end_marker_before_begin_marker(tmp_path, monkeypatch):
@@ -377,7 +378,7 @@ def test_uninstall_and_prune_with_adjacent_block(sample):
 def test_drop_placeholder_cases(sample):
     cli, _ = sample
     t = "\0ROLEHOP:x\0\n"
-    assert cli.drop_placeholder(f"A\n{t}B\n", t) == "A\nB\n"
-    assert cli.drop_placeholder(f"A\n\n{t}\nB\n", t) == "A\n\nB\n"
-    assert cli.drop_placeholder(f"{t}\n[default]\n", t) == "[default]\n"
-    assert cli.drop_placeholder(f"A\n\n{t}", t) == "A\n"
+    assert awsconfig.drop_placeholder(f"A\n{t}B\n", t) == "A\nB\n"
+    assert awsconfig.drop_placeholder(f"A\n\n{t}\nB\n", t) == "A\n\nB\n"
+    assert awsconfig.drop_placeholder(f"{t}\n[default]\n", t) == "[default]\n"
+    assert awsconfig.drop_placeholder(f"A\n\n{t}", t) == "A\n"

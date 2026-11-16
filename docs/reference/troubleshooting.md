@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Start with `rolehop doctor`: it checks the whole installation and prints the command that fixes each problem. Add `-v` to any command (`rolehop -v sync`) to see what it runs and writes.
+
 | Symptom | Fix |
 |---|---|
 | `✗ <org> … no session · run: awslogin <org>` | Run `awslogin <org>`. |

@@ -5,6 +5,7 @@ They never block anything or read credentials. On any error they exit silently (
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
@@ -12,6 +13,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
+from rolehop import config, errors, paths, session
 
 # Does the command touch AWS? An AWS program at the start of a segment (after ; & | ( or $( ), allowing wrappers
 # (time, nice, nohup, timeout N) and VAR=value assignments in front; or an explicit AWS_PROFILE=.
@@ -41,7 +45,7 @@ STRICT_EXPIRED_RE = re.compile(
 
 def _get(data: dict, *paths: tuple[str, ...]) -> str:
     for path in paths:
-        cur = data
+        cur: Any = data
         for key in path:
             if isinstance(cur, str) and cur.lstrip().startswith("{"):  # e.g. Copilot toolArgs as JSON
                 try:
@@ -57,14 +61,13 @@ def _get(data: dict, *paths: tuple[str, ...]) -> str:
 
 
 def _org_for(profile: str) -> str:
-    from rolehop import cli
     org = None
     try:
-        for row in cli.catalog(cli.load_orgs()):
+        for row in config.catalog(config.load_orgs()):
             if row["profile"] == profile:
                 org = row["org"]
                 break
-    except cli.ConfigError:
+    except errors.ConfigError:
         pass
     org = org or (profile.split("-", 1)[0] if profile else "")
     return org if ORG_RE.match(org or "") else ""
@@ -89,7 +92,7 @@ def _emit(fmt: str, event: str, message: str) -> None:
     default_event = {"claude": "PostToolUse", "codex": "PostToolUse", "qwen": "PostToolUse", "gemini": "AfterTool",
                      "copilot": "PostToolUse"}
     if fmt in ("claude", "codex", "qwen", "gemini"):
-        out = {"hookSpecificOutput": {"hookEventName": event or default_event[fmt], "additionalContext": message}}
+        out: dict[str, Any] = {"hookSpecificOutput": {"hookEventName": event or default_event[fmt], "additionalContext": message}}
     elif fmt == "copilot":
         out = {"additionalContext": message,
                "hookSpecificOutput": {"hookEventName": event or "PostToolUse", "additionalContext": message}}
@@ -101,7 +104,6 @@ def _emit(fmt: str, event: str, message: str) -> None:
 
 def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
     """Post-shell-command hook: detect an expired SSO session and notify the agent."""
-    from rolehop import cli
     try:
         data = json.loads(stdin if stdin is not None else sys.stdin.read())
     except (ValueError, OSError):
@@ -118,16 +120,16 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
     error_text = _get(data, *ERROR_KEYS)
     failed = "Failure" in event or bool(error_text)
     if failed:
-        expired = bool(cli.EXPIRED_RE.search(error_text or _get(data, *COMBINED_KEYS)))
+        expired = bool(session.EXPIRED_RE.search(error_text or _get(data, *COMBINED_KEYS)))
     else:
         stderr = _get(data, *STDERR_KEYS)
         if stderr or ("tool_response" in data and isinstance(data["tool_response"], dict)
                       and "stderr" in data["tool_response"]):
-            expired = bool(cli.EXPIRED_RE.search(stderr))
+            expired = bool(session.EXPIRED_RE.search(stderr))
         else:
             expired = bool(STRICT_EXPIRED_RE.search(_get(data, *COMBINED_KEYS)))
 
-    state_dir = cli.STATE_DIR
+    state_dir = paths.STATE_DIR
     if not expired:
         if failed:
             return 0
@@ -142,7 +144,7 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
     if expired:
         who = org or "<org>"
         if org:
-            cli.write_state(org, blocked=True, blocked_at=cli.dt.datetime.now(cli.dt.timezone.utc).isoformat())
+            session.write_state(org, blocked=True, blocked_at=dt.datetime.now(dt.UTC).isoformat())
         _herdr_title(f"⚠ AWS: run awslogin {who}")
         msg = (f"AWS SSO: the session for organization '{who}' has expired (profile: {profile or 'unknown'}). "
                f"STOP using AWS: do not retry, and do not switch to another profile to work around it. Ask the user "
@@ -154,7 +156,7 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
     if org:
         f = state_dir / f"{org}.json"
         if f.exists() and ('"blocked": true' in f.read_text() or '"blocked_at": "' in f.read_text()):
-            cli.write_state(org, blocked=False, blocked_at=None)
+            session.write_state(org, blocked=False, blocked_at=None)
             _herdr_title(None)
     return 0
 

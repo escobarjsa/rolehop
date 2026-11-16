@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from rolehop import hooks, runner, shellrc
+from rolehop import session
 
 
 def run_hook(capsys, payload, fmt="claude"):
@@ -23,17 +24,17 @@ def test_hook_detects_expiry_and_marks_blocked(sample, capsys):
     ctx = out["hookSpecificOutput"]["additionalContext"]
     assert "awslogin acme" in ctx
     assert out["hookSpecificOutput"]["hookEventName"] == "PostToolUseFailure"
-    assert cli.read_state("acme")["blocked"] is True
+    assert session.read_state("acme")["blocked"] is True
 
 
 def test_hook_clears_mark_after_success(sample, capsys):
     cli, _ = sample
-    cli.write_state("acme", blocked=True, blocked_at="2026-01-01T00:00:00+00:00")
+    session.write_state("acme", blocked=True, blocked_at="2026-01-01T00:00:00+00:00")
     out = run_hook(capsys, {"hook_event_name": "PostToolUse", "tool_name": "Bash",
                             "tool_input": {"command": "aws s3 ls --profile acme-prod-admin"},
                             "tool_response": {"stdout": "ok", "stderr": ""}})
     assert out == ""
-    st = cli.read_state("acme")
+    st = session.read_state("acme")
     assert st["blocked"] is False and st["blocked_at"] is None
 
 
@@ -70,17 +71,17 @@ def test_parse_minutes():
 
 def test_run_does_not_start_without_session(sample, capsys, monkeypatch):
     cli, _ = sample
-    monkeypatch.setattr(cli, "check_org", lambda org: {"ok": False, "estimated_left_min": None})
+    monkeypatch.setattr(session, "check_org", lambda org: {"ok": False, "estimated_left_min": None})
     assert runner.run([], "3h", False, False, []) == 75
     assert "no session" in capsys.readouterr().out
 
 
 def test_run_insufficient_and_sufficient_time(sample, capsys, monkeypatch):
     cli, _ = sample
-    monkeypatch.setattr(cli, "check_org", lambda org: {"ok": True, "estimated_left_min": 120})
+    monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "estimated_left_min": 120})
     assert runner.run([], "3h", False, False, []) == 75
     assert "--max 1h45m" in capsys.readouterr().out
-    monkeypatch.setattr(cli, "check_org", lambda org: {"ok": True, "estimated_left_min": 470})
+    monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "estimated_left_min": 470})
     assert runner.run([], "6h", False, False, ["true"]) == 0
     assert runner.run([], "1h", False, False, ["false"]) == 1
 
