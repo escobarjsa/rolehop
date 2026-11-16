@@ -12,6 +12,7 @@ import json
 import pytest
 from conftest import SAMPLE
 from rolehop import agents, shellrc
+from rolehop import paths
 
 LEGACY_BLOCK = """\
 [default]
@@ -55,8 +56,9 @@ def test_migrates_awsorg_config_and_state(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "aws-config"))
     for var in ("ROLEHOP_CONFIG", "AWSORG_CONFIG", "AWS_PROFILE"):
         monkeypatch.delenv(var, raising=False)
-    import rolehop.cli as cli
-    cli = importlib.reload(cli)
+    import rolehop.paths
+    importlib.reload(rolehop.paths)
+    from rolehop import cli
     assert cli.main(["list"]) == 0
     out = capsys.readouterr()
     assert "migrated" in out.err and "acme-devsecops-admin" in out.out
@@ -73,9 +75,9 @@ def test_awsorg_config_env_var_still_works(tmp_path, monkeypatch):
     cfg.write_text(SAMPLE)
     monkeypatch.delenv("ROLEHOP_CONFIG", raising=False)
     monkeypatch.setenv("AWSORG_CONFIG", str(cfg))
-    import rolehop.cli as cli
-    cli = importlib.reload(cli)
-    assert cli.CONFIG_PATH == cfg
+    import rolehop.paths
+    importlib.reload(rolehop.paths)
+    assert paths.CONFIG_PATH == cfg
 
 
 AWSORG_MARKS = ("# >>> awsorg (gestionado por awsorg setup) >>>", "# <<< awsorg <<<")
@@ -174,7 +176,8 @@ def test_dry_run_does_not_migrate(tmp_path, monkeypatch):
     monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "aws-config"))
     for var in ("ROLEHOP_CONFIG", "AWSORG_CONFIG"):
         monkeypatch.delenv(var, raising=False)
-    import rolehop.cli as cli
-    cli = importlib.reload(cli)
+    import rolehop.paths
+    importlib.reload(rolehop.paths)
+    from rolehop import cli
     cli.main(["sync", "--dry-run"])
     assert not (home / ".config/rolehop/orgs.toml").exists()

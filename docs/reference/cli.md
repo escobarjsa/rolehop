@@ -1,10 +1,17 @@
 # CLI reference
 
 ```text
-rolehop [-h] [--version] {setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,upgrade,uninstall} ...
+rolehop [-h] [--version] [-v] {setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,doctor,upgrade,completion,uninstall} ...
 ```
 
 Every command that modifies files makes a timestamped backup (`<file>.bak-YYYYmmdd-HHMMSS`) first, and most accept `--dry-run`.
+
+Global options:
+
+| Option | Description |
+|---|---|
+| `-v`, `--verbose` | Print debug details to stderr: commands run, files written, URLs requested (never tokens). Same as `ROLEHOP_DEBUG=1`, which also works inside agent hooks. Put it before the subcommand: `rolehop -v sync`. |
+| `--version` | Print the version. |
 
 ## `rolehop setup`
 
@@ -144,9 +151,24 @@ Lists the real accounts and permission sets of an organization through the AWS a
 rolehop discover ORG
 ```
 
+## `rolehop doctor`
+
+Checks the installation and prints the exact command that fixes each problem: AWS CLI version, `PATH`, leftovers from older versions, `orgs.toml`, whether `~/.aws/config` is in sync, static credentials in the environment, sessions, the shell block and AI agent rules.
+
+```text
+rolehop doctor [--json] [--online]
+```
+
+| Option | Description |
+|---|---|
+| `--json` | Machine-readable output: a list of `{name, status, detail, fix}`. |
+| `--online` | Also probe every session with STS and check GitHub for a newer release. Without it, `doctor` makes no network calls. |
+
+Exit code `1` if any check is an error (warnings do not fail).
+
 ## `rolehop upgrade`
 
-Updates rolehop to the latest [GitHub Release](https://github.com/escobarjsa/rolehop/releases), using the same installer you used (`uv tool` or `pipx`).
+Updates rolehop to the latest [GitHub Release](https://github.com/escobarjsa/rolehop/releases), using the same installer you used (`uv tool` or `pipx`). The wheel is downloaded first and its SHA-256 is checked against the digest GitHub publishes for the asset and against the release's `SHA256SUMS`; only the verified file is installed. If they do not match, nothing is installed.
 
 ```text
 rolehop upgrade [--check] [--force]
@@ -156,6 +178,16 @@ rolehop upgrade [--check] [--force]
 |---|---|
 | `--check` | Only report whether a newer version exists. |
 | `--force` | Reinstall even if you already have the latest version. |
+
+## `rolehop completion`
+
+Prints a shell completion script. Subcommands and flags come from the parser itself; organization, account and profile names are completed from `orgs.toml`.
+
+```text
+rolehop completion {bash,zsh,fish}
+```
+
+See [Shell completion](../getting-started/installation.md#shell-completion).
 
 ## `rolehop uninstall`
 

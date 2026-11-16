@@ -16,6 +16,7 @@ import sys
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from rolehop.shellrc import find_any_block, find_block
 
@@ -57,7 +58,7 @@ AGENTS: dict[str, Agent] = {a.key: a for a in [
     Agent("claude", "Claude Code", ("claude",), (".claude",), ".claude/rules/aws.md", "file", hooks="claude"),
     Agent("codex", "OpenAI Codex CLI", ("codex",), (".codex",), ".codex/AGENTS.md", hooks="codex",
           notes=["Codex asks you to trust new hooks: open Codex and approve them with /hooks."]),
-    Agent("kiro", "Kiro (CLI e IDE)", ("kiro-cli", "kiro"), (".kiro",), ".kiro/steering/aws.md", "file",
+    Agent("kiro", "Kiro (CLI and IDE)", ("kiro-cli", "kiro"), (".kiro",), ".kiro/steering/aws.md", "file",
           frontmatter="---\ninclusion: always\n---\n\n",
           notes=["Kiro: rules only (steering). Its post-shell hooks do not reliably deliver command output."]),
     Agent("copilot", "GitHub Copilot CLI", ("copilot",), (".copilot",), ".copilot/copilot-instructions.md",
@@ -156,7 +157,7 @@ def _without_block(current: str) -> str:
     return out if out.strip() else ""
 
 
-def _read_json(path: Path) -> dict:
+def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8").strip()
@@ -184,7 +185,7 @@ def _merge_nested_hooks(data: dict, event: str, matcher: str | None, command: st
     for g in groups:  # remove our previous versions (including the old kit scripts)
         g["hooks"] = [h for h in g.get("hooks", []) if not _is_ours(str(h.get("command", "")))]
     groups = [g for g in groups if g.get("hooks")]
-    entry = {"hooks": [{"type": "command", "command": command, "timeout": timeout}]}
+    entry: dict[str, Any] = {"hooks": [{"type": "command", "command": command, "timeout": timeout}]}
     if matcher:
         entry = {"matcher": matcher, **entry}
     groups.append(entry)
@@ -218,14 +219,14 @@ def _hooks_target(agent: Agent, home: Path) -> Path:
         "gemini": home / ".gemini/settings.json",
         "qwen": home / ".qwen/settings.json",
         "copilot": home / ".copilot/hooks/rolehop.json",
-    }[agent.hooks]
+    }[agent.hooks or ""]
 
 
 def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     path = _hooks_target(agent, home)
     fmt = agent.hooks
     if fmt == "copilot":
-        data = {"version": 1, "hooks": {
+        data: dict[str, Any] = {"version": 1, "hooks": {
             "PostToolUse": [{"type": "command", "bash": _hook_cmd("copilot"), "timeoutSec": 15}],
             "PostToolUseFailure": [{"type": "command", "bash": _hook_cmd("copilot"), "timeoutSec": 15}],
         }}
@@ -280,6 +281,7 @@ def install(agent: Agent, home: Path, ch: Changes, with_hooks: bool = True) -> N
     if agent.rules_mode == "ui":
         ch.lines.append(f"! {agent.name}: no global rules file.")
     else:
+        assert agent.rules_path is not None  # every non-UI agent has a rules file
         path = home / agent.rules_path
         if agent.rules_mode == "file":
             ch.write(path, agent.frontmatter + rules_text(), f"{agent.name} rules")

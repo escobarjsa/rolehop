@@ -101,8 +101,8 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
     else:
         sep = "" if not current or current.endswith("\n\n") else ("\n" if current.endswith("\n") else "\n\n")
         new = current + sep + wanted
-    for begin, end in LEGACY_MARKS:  # drop any leftover legacy blocks
-        while (old := find_block(new, begin, end)) is not None:
+    for legacy_begin, legacy_end in LEGACY_MARKS:  # drop any leftover legacy blocks
+        while (old := find_block(new, legacy_begin, legacy_end)) is not None:
             new = new[:old[0]].rstrip("\n") + "\n" + new[old[1]:].lstrip("\n")
     if new == current:
         msgs.append(f"✓ {rc} already has ~/.local/bin on PATH" + (" and direnv" if has_direnv else ""))

@@ -11,6 +11,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from rolehop import config, paths, wizard
+from rolehop import portal as portal_api
 
 ACCOUNTS = [("acme-devsecops", "111111111111", ["Administrator", "PowerUser"]),
             ("billing", "222222222222", ["Administrator", "ReadOnly"]),
@@ -59,8 +61,8 @@ def portal(env, monkeypatch):
     for name in ("acme", "personal"):
         (p.cache / f"{hashlib.sha1(name.encode()).hexdigest()}.json").write_text(
             json.dumps({"accessToken": "FAKE-TOKEN", "expiresAt": exp}))
-    monkeypatch.setattr(cli, "SSO_CACHE", p.cache)
-    monkeypatch.setattr(cli, "_login_for_discovery", lambda org: True)
+    monkeypatch.setattr(paths, "SSO_CACHE", p.cache)
+    monkeypatch.setattr(portal_api, "login_for_discovery", lambda org: True)
     yield cli, p
     srv.shutdown()
 
@@ -73,7 +75,7 @@ def test_init_discovers_and_creates_orgs(portal, monkeypatch, capsys):
     cli, p = portal
     answer(monkeypatch, ["acme", "https://acme.awsapps.com/start/#/", "", "", "8", "y", "yes", "n"])
     assert cli.main(["init"]) == 0
-    orgs = cli.load_orgs()
+    orgs = config.load_orgs()
     accounts = {a["name"]: a for a in orgs[0]["accounts"]}
     assert orgs[0]["start_url"] == "https://acme.awsapps.com/start"
     assert set(accounts) == {"devsecops", "billing", "app-dev", "app-qa", "data", "sandbox"}  # org prefix stripped
@@ -91,7 +93,7 @@ def test_init_refresh_picks_up_new_account(portal, monkeypatch):
     monkeypatch.setattr(Portal, "accounts", ACCOUNTS + [("new", "777777777777", ["ReadOnly"])])
     answer(monkeypatch, ["2", "acme", "3"])
     assert cli.main(["init"]) == 0
-    names = {a["name"] for a in cli.load_orgs()[0]["accounts"]}
+    names = {a["name"] for a in config.load_orgs()[0]["accounts"]}
     assert "new" in names and len(list(p.tmp.glob("orgs.toml.bak-*"))) == 1
 
 
@@ -102,7 +104,7 @@ def test_init_manual_entry_and_validation(env, monkeypatch, capsys):
     assert cli.main(["init"]) == 0
     out = capsys.readouterr().out
     assert "must be https" in out and "12 digits" in out
-    org = cli.load_orgs()[0]
+    org = config.load_orgs()[0]
     assert org["sso_region"] == "us-east-2" and org["accounts"][0]["roles"] == ["admin"]
 
 
@@ -135,5 +137,5 @@ def test_discover_without_token(env, capsys):
 def test_yes_prompt_accepts_english_and_spanish(env, monkeypatch, capsys, reply, default, expected):
     cli, _ = env
     answer(monkeypatch, [reply])
-    assert cli._yes("Continue?", default) is expected
+    assert wizard.yes("Continue?", default) is expected
     assert ("[Y/n]" if default else "[y/N]") in capsys.readouterr().out

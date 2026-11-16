@@ -43,11 +43,11 @@ rolehop setup
 Before the PyPI release, install from GitHub - the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
-uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.5.0/rolehop-1.5.0-py3-none-any.whl
+uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.6.0/rolehop-1.6.0-py3-none-any.whl
 uv tool install git+https://github.com/escobarjsa/rolehop
 ```
 
-Upgrade later with `rolehop upgrade`; remove everything with `rolehop uninstall`.
+Upgrade later with `rolehop upgrade`, check the installation with `rolehop doctor`, and remove everything with `rolehop uninstall`. Shell completion: `eval "$(rolehop completion zsh)"` (or `bash`, `fish`).
 
 `rolehop setup` adds `~/.local/bin` to your `PATH`, runs the wizard if needed, writes your profiles and configures the AI agents it detects.
 
@@ -61,7 +61,8 @@ AWS_PROFILE=acme-prod-admin aws s3 ls      # use a profile
 rolehop run --login --max 6h               # before leaving an agent working
 rolehop refresh --prune                    # your permissions changed
 rolehop remove acme-prod                   # drop a profile, an account or an org
-rolehop upgrade                            # update to the latest release
+rolehop upgrade                            # update to the latest release (checksum-verified)
+rolehop doctor                             # check the installation, with the fix for each problem
 ```
 
 Then tell your agent: *"use whatever AWS profiles and roles you need."*
@@ -111,6 +112,7 @@ See the [configuration reference](https://escobarjsa.github.io/rolehop/guide/con
 ```bash
 uv run --group dev pytest
 uv run --group dev ruff check src tests
+uv run --group dev mypy
 uv run --group docs zensical serve    # docs at http://localhost:8000
 uv build
 ```

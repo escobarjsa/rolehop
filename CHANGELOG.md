@@ -3,6 +3,22 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-11-16
+
+### Added
+- `rolehop doctor [--json] [--online]`: checks the AWS CLI version, `PATH`, leftovers from older versions, `orgs.toml`, whether `~/.aws/config` is in sync, static credentials in the environment, sessions, the shell block and AI agent rules, and prints the exact fix for each problem.
+- `rolehop completion {bash,zsh,fish}`: shell completion for subcommands and flags, plus organization, account and profile names from `orgs.toml`.
+- `-v/--verbose` (or `ROLEHOP_DEBUG=1`): debug output with the commands run, files written and URLs requested (never tokens).
+
+### Security
+- `rolehop upgrade` downloads the wheel and verifies its SHA-256 against the GitHub asset digest and the release's `SHA256SUMS` before installing the verified file.
+- Releases include `SHA256SUMS` and a signed build provenance attestation (`gh attestation verify`).
+- Every GitHub Action is pinned to a commit SHA; `main` is protected (pull requests with passing CI, no force pushes).
+
+### Changed
+- The CLI module was split into focused modules (`paths`, `config`, `awsconfig`, `session`, `portal`, `wizard`, `doctor`, `completion`, `ui`).
+- CI runs `mypy` and enforces at least 85% test coverage (branch coverage); the test suite grew to 136 tests.
+
 ## [1.5.0] - 2026-11-12
 
 ### Changed
@@ -58,6 +74,7 @@ First release as a Python package (as `awsorg`).
 ### Inherited from the script versions (1.0-1.1)
 - Declarative `sso-session` profiles for any number of organizations, `init` wizard with discovery through the AWS access portal API (standard library), `discover`, `status`, `login`, full validation, atomic writes, symlink support and backups.
 
+[1.6.0]: https://github.com/escobarjsa/rolehop/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/escobarjsa/rolehop/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/escobarjsa/rolehop/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/escobarjsa/rolehop/compare/v1.3.0...v1.3.1

@@ -25,7 +25,8 @@ Run these before opening a pull request - CI runs the same checks on Linux and m
 
 ```bash
 uv run --group dev ruff check src tests     # lint
-uv run --group dev pytest                    # tests
+uv run --group dev mypy                      # type checks
+uv run --group dev pytest --cov=rolehop      # tests (coverage must stay at or above 85%)
 uv build                                     # package builds
 uv run --group docs zensical build --clean   # docs build (only if you changed docs/)
 ```
@@ -62,5 +63,6 @@ These are deliberate design choices; changes that break them are unlikely to be 
 ## Releasing (maintainers)
 
 1. Update the version in `pyproject.toml` and `src/rolehop/__init__.py`, and move the `Unreleased` changelog entries under the new version.
-2. Commit, then tag and push: `git tag -a vX.Y.Z -m "rolehop X.Y.Z" && git push origin main vX.Y.Z`.
-3. The `Release` workflow checks that the tag matches the package version, runs the checks, builds the wheel and sdist, and publishes a GitHub Release with both attached. PyPI publishing runs only when the repository variable `PUBLISH_TO_PYPI` is `true`.
+2. Open a pull request with those changes and merge it once CI is green (`main` only accepts pull requests).
+3. Tag the merge commit on `main` and push the tag: `git tag -a vX.Y.Z -m "rolehop X.Y.Z" && git push origin vX.Y.Z`.
+4. The `Release` workflow checks that the tag matches the package version, runs the checks, builds the wheel and sdist, and publishes a GitHub Release with both attached. PyPI publishing runs only when the repository variable `PUBLISH_TO_PYPI` is `true`.

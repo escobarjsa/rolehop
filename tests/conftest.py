@@ -33,7 +33,7 @@ SAMPLE = textwrap.dedent("""
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """Reload rolehop.cli with temporary paths and return (cli, paths)."""
+    """Point rolehop at temporary paths (by reloading rolehop.paths) and return (cli, paths)."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -43,8 +43,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("ROLEHOP_SSO_CACHE", str(tmp_path / "sso-cache"))
     monkeypatch.delenv("AWS_PROFILE", raising=False)
     monkeypatch.delenv("HERDR_PANE_ID", raising=False)
-    import rolehop.cli as cli
-    cli = importlib.reload(cli)
+    import rolehop.paths
+    importlib.reload(rolehop.paths)
+    from rolehop import cli
     paths = type("P", (), {
         "home": home,
         "orgs": tmp_path / "orgs.toml",
