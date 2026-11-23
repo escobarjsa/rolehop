@@ -38,41 +38,49 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
             ui.echo("✗ " + _("Login failed: not starting."), err=True)
             return 1
     fail = False
+    groups: set[str] = set()
     width = max((len(o["name"]) for o in orgs), default=0)
     for org in orgs:
         name = org["name"]
         r = session.check_org(org)
         left = r.get("estimated_left_min")
         if not r["ok"]:
-            ui.item("error", name, _("no session"), _("run: {cmd}", cmd=f"rolehop login {name}"), width=width)
+            kind, detail, fix, group = cli.status_line(r)
+            ui.item(kind, name, detail, "" if group else fix, width=width)  # sync/login are solved by one command below
+            groups.add(group)
             fail = True
         elif left is None:
             if yes:
                 ui.item("warn", name, _("session active, time left unknown (continuing because of --yes)"), width=width)
             else:
                 ui.item("warn", name, _("session active, but the time left is unknown"),
-                        _("rerun with --login (recommended) or --yes"), width=width)
+                        _("run: {cmd}", cmd=f"rolehop run --login --max {max_value}"), width=width)
                 fail = True
         elif left < need:
             best = fmt(max(left - MARGIN_MIN, 0))
             if login:
                 ui.item("error", name, _("the access portal session lasts ~{left}; you asked for {max} (+{margin}m margin)",
                                          left=fmt(left), max=max_value, margin=MARGIN_MIN),
-                        _("Use at most --max {best} or split the work.", best=best), width=width)
+                        _("split the work, or run: {cmd}", cmd=f"rolehop run --max {best}"), width=width)
             else:
-                ui.item("error", name, _("~{left} left; the work needs {need} (margin included)",
-                                         left=fmt(left), need=fmt(need)),
-                        _("rerun with --login to renew, or use --max {best}", best=best), width=width)
+                ui.item("warn", name, _("~{left} left; the work needs {need} (margin included)",
+                                        left=fmt(left), need=fmt(need)),
+                        _("run: {cmd}", cmd=f"rolehop run --login --max {max_value}"), width=width)
             fail = True
         else:
             ui.item("ok", name, _("~{left} left (you need {need})", left=fmt(left), need=fmt(need)), width=width)
     if fail:
-        ui.echo()
-        ui.echo("✗ " + _("Not starting: the session will not last for --max {max}.", max=max_value))
+        ui.echo(err=True)
+        ui.echo("✗ " + _("Nothing was started: the session does not last long enough for --max {max}.", max=max_value),
+                err=True)
+        if "rolehop sync" in groups:
+            ui.fix(_("run: {cmd}", cmd="rolehop sync"), indent=2, err=True)
+        if "rolehop login" in groups:
+            ui.fix(_("run: {cmd}", cmd=f"rolehop run --login --max {max_value}"), indent=2, err=True)
         return 75
     if not command:
         ui.echo()
-        ui.echo("✓ " + _("Ready: the session will last ~{max}. You can leave your agent working.", max=max_value))
+        ui.echo("✓ " + _("Ready: the session lasts at least {max}. You can leave your agent working.", max=max_value))
         ui.hint(_("If it expires earlier, approve the login from your phone (device code: rolehop login)."))
         return 0
     ui.echo(_("Running: {cmd}", cmd=" ".join(command)))

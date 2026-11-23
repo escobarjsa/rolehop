@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tomllib
 from functools import cache
 from importlib import resources
@@ -49,17 +50,42 @@ def read_settings() -> dict:
         return {}
 
 
+class SettingsError(Exception):
+    """settings.toml exists but cannot be rewritten without losing content."""
+
+
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def write_language(code: str | None) -> None:
-    """Persist the language in settings.toml (None removes the setting, back to automatic)."""
-    settings = {k: v for k, v in read_settings().items() if k != "language"}
+    """Persist the language in settings.toml (None removes the setting, back to automatic).
+
+    Other simple settings are preserved. If the file is not valid TOML or holds anything this writer cannot
+    reproduce exactly (tables, arrays, unusual keys), nothing is written and SettingsError is raised.
+    """
+    target = paths.SETTINGS_PATH
+    settings: dict = {}
+    if target.exists():
+        try:
+            with target.open("rb") as fh:
+                settings = tomllib.load(fh)
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise SettingsError(f"{target} is not valid TOML ({exc})") from None
+    settings.pop("language", None)
+    unsupported = [k for k, v in settings.items()
+                   if not _BARE_KEY.match(k) or isinstance(v, (dict, list)) or not isinstance(v, (str, int, float, bool))]
+    if unsupported:
+        raise SettingsError(f"{target} has settings rolehop cannot rewrite safely: {', '.join(unsupported)}")
     if code:
         settings["language"] = code
     lines = ["# rolehop user settings. Change the language with: rolehop language <en|es|pt|auto>"]
-    lines += [f"{k} = {json.dumps(v)}" for k, v in settings.items() if isinstance(v, (str, int, bool))]
-    paths.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = paths.SETTINGS_PATH.with_name(paths.SETTINGS_PATH.name + ".tmp")
-    tmp.write_text("\n".join(lines) + "\n")
-    tmp.replace(paths.SETTINGS_PATH)
+    for key, value in settings.items():
+        rendered = ("true" if value else "false") if isinstance(value, bool) else json.dumps(value, ensure_ascii=False)
+        lines.append(f"{key} = {rendered}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    tmp.replace(target)
     current.cache_clear()
 
 
@@ -100,8 +126,14 @@ def catalog(lang: str) -> dict[str, str]:
     if not folder.is_dir():
         return merged
     for entry in sorted(folder.iterdir(), key=lambda e: e.name):
-        if entry.name.endswith(".json"):
-            merged.update(json.loads(entry.read_text(encoding="utf-8")))
+        if not entry.name.endswith(".json"):
+            continue
+        try:  # a damaged catalog file must never break the tool: skip it and fall back to English
+            data = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(data, dict):
+            merged.update({k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)})
     return merged
 
 
@@ -128,6 +160,9 @@ ARGPARSE = {  # argparse's own strings, so --help is fully translated
                                                             "pt": "opção inválida: %(value)r (escolha entre %(choices)s)"},
     "unrecognized arguments: %s": {"es": "argumentos no reconocidos: %s", "pt": "argumentos não reconhecidos: %s"},
     "%(prog)s: error: %(message)s\n": {"es": "%(prog)s: error: %(message)s\n", "pt": "%(prog)s: erro: %(message)s\n"},
+    "argument %(argument_name)s: %(message)s": {"es": "argumento %(argument_name)s: %(message)s",
+                                                "pt": "argumento %(argument_name)s: %(message)s"},
+    "expected one argument": {"es": "se esperaba un valor", "pt": "era esperado um valor"},
 }
 
 

@@ -69,8 +69,16 @@ def write(path: Path, text: str) -> None:
 
 
 @pytest.fixture(autouse=True)
-def english_by_default(monkeypatch):
-    """Tests assert English output regardless of the developer's locale; reset any --lang from a previous test."""
+def english_by_default(monkeypatch, tmp_path_factory):
+    """Tests assert English output regardless of the developer's locale; reset any --lang from a previous test.
+
+    settings.toml always points to a temporary file, so no test can touch the developer's real settings.
+    """
+    import rolehop.paths
+    settings = tmp_path_factory.mktemp("settings") / "settings.toml"
+    monkeypatch.setenv("ROLEHOP_SETTINGS", str(settings))
+    monkeypatch.delenv("AWSORG_SETTINGS", raising=False)
+    monkeypatch.setattr(rolehop.paths, "SETTINGS_PATH", settings)
     monkeypatch.setenv("ROLEHOP_LANG", "en")
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)

@@ -121,10 +121,11 @@ def run_checks(online: bool = False) -> list[Check]:
                                              names=", ".join(static)),
                             _("unset {names} and remove them from your shell rc", names=" ".join(static))))
 
-    for org in orgs:
+    out_of_sync = any(c.name == "aws-config" and c.status != "ok" for c in checks)
+    for org in ([] if out_of_sync else orgs):  # sessions can't be checked until the profiles exist
         name = org["name"]
         if online:  # same wording as `rolehop status`; a missing session is a warning here, not an error
-            kind, detail, fix = cli.status_line({"org": name, **session.check_org(org)})
+            kind, detail, fix, _group = cli.status_line({"org": name, **session.check_org(org)})
             checks.append(Check(f"session:{name}", "ok" if kind == "ok" else "warn", detail, fix))
             continue
         if session.read_state(name).get("blocked"):
@@ -176,6 +177,9 @@ def run_checks(online: bool = False) -> list[Check]:
 
 
 def cmd_doctor(args) -> int:
+    if args.json:  # machine-readable output is language-independent
+        from rolehop import i18n
+        i18n.set_language("en")
     checks = run_checks(online=args.online)
     if args.json:
         print(json.dumps([asdict(c) for c in checks], indent=2))

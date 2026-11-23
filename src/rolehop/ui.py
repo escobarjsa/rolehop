@@ -30,14 +30,16 @@ def set_verbose(enabled: bool) -> None:
 
 def set_no_color(enabled: bool) -> None:
     global _no_color_flag
-    _no_color_flag = _no_color_flag or enabled
+    _no_color_flag = enabled
 
 
 def color_enabled(stream: TextIO | None = None) -> bool:
     stream = stream or sys.stdout
+    if _no_color_flag:  # an explicit --no-color always wins
+        return False
     if os.environ.get("FORCE_COLOR", "") not in ("", "0"):
         return True
-    if _no_color_flag or os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
+    if os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
         return False
     return bool(getattr(stream, "isatty", lambda: False)())
 
@@ -88,6 +90,12 @@ def item(kind: str, name: str, detail: str, fix: str = "", *, width: int = 0, er
     print(head.rstrip(), file=stream)
     if fix:
         print(f"{' ' * (pad + 4)}{paint(symbol('next', stream) + ' ' + fix, 'next', stream)}", file=stream)
+
+
+def fix(text: str, *, indent: int = 0, err: bool = False) -> None:
+    """The next step, on its own line: "→ run: rolehop sync". Same look everywhere."""
+    stream = sys.stderr if err else sys.stdout
+    print(" " * indent + paint(symbol("next", stream) + " " + text, "next", stream), file=stream)
 
 
 def short(path: object) -> str:

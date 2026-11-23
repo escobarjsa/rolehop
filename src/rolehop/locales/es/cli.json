@@ -135,7 +135,6 @@
   "setup wizard for AWS IAM Identity Center organizations": "asistente de configuración para organizaciones de AWS IAM Identity Center",
   "show the changes without writing anything": "muestra los cambios sin escribir nada",
   "sign in and check the sessions: {cmd}": "inicia sesión y revisa las sesiones: {cmd}",
-  "sign in first: {cmd}": "inicia sesión primero: {cmd}",
   "sign-in did not complete": "no se completó el inicio de sesión",
   "skipped: --no-agents": "omitido: --no-agents",
   "start even if the remaining time can't be estimated": "empieza aunque no se pueda estimar el tiempo restante",

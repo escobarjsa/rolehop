@@ -11,3 +11,6 @@ site/
 orgs.toml
 !src/rolehop/data/orgs.example.toml
 *.bak-*
+.coverage
+.coverage.*
+coverage.xml

@@ -17,7 +17,7 @@ def env(name: str) -> str | None:
 
 CONFIG_PATH = Path(env("CONFIG") or HOME / ".config/rolehop/orgs.toml")
 # User preferences (language…), kept apart from orgs.toml so the wizard can rewrite orgs.toml freely.
-SETTINGS_PATH = Path(env("SETTINGS") or CONFIG_PATH.with_name("settings.toml"))
+SETTINGS_PATH = Path(env("SETTINGS") or Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "rolehop/settings.toml")
 LEGACY_CONFIG_PATH = HOME / f".config/{LEGACY_NAME}/orgs.toml"
 AWS_CONFIG = Path(os.environ.get("AWS_CONFIG_FILE") or HOME / ".aws/config")
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "rolehop"

@@ -79,28 +79,56 @@ def cmd_sync(args) -> int:
     return 0
 
 
-def status_line(r: dict) -> tuple[str, str, str]:
-    """(kind, detail, fix) for one org's session check, shared by `status` and `doctor`."""
+def status_line(r: dict) -> tuple[str, str, str, str]:
+    """(kind, detail, fix, group) for one org's session check, shared by `status`, `run` and `doctor`.
+
+    kind follows the traffic-light rule: "ok" done, "warn" the user has to act (sync or sign in), "error" something
+    is broken. group is the command that fixes several orgs at once ("rolehop sync", "rolehop login"), or "".
+    """
     org = r.get("org", "?")
+    code = r.get("code")
     if r.get("ok"):
         return "ok", _("active · {left} · account {account}", left=session.fmt_left(r.get("estimated_left_min")),
-                       account=r.get("account") or "?"), ""
-    if r.get("needs_sync"):
-        return "error", _("profiles are not in {path} yet", path=ui.short(paths.AWS_CONFIG)), _("run: {cmd}", cmd="rolehop sync")
-    if r.get("expired") or r.get("blocked"):
-        return "error", _("session expired"), _("run: {cmd}", cmd=f"rolehop login {org}")
+                       account=r.get("account") or "?"), "", ""
+    login = _("run: {cmd}", cmd=f"rolehop login {org}")
     doctor = _("run: {cmd}", cmd="rolehop doctor")
-    code = r.get("code")
+    if code == "needs_sync" or r.get("needs_sync"):
+        return ("warn", _("profiles are not in {path} yet", path=ui.short(paths.AWS_CONFIG)),
+                _("run: {cmd}", cmd="rolehop sync"), "rolehop sync")
+    if code == "not_signed_in":
+        return "warn", _("not signed in"), login, "rolehop login"
+    if code == "expired" or r.get("expired") or r.get("blocked"):
+        return "warn", _("session expired"), login, "rolehop login"
+    if code == "forbidden":
+        return ("error", _("access denied for {profile} (was the role revoked?)", profile=r.get("probe_profile") or "?"),
+                _("run: {cmd}", cmd=f"rolehop refresh {org}"), "")
+    if code == "network":
+        return "error", _("could not reach AWS ({reason})", reason=r.get("error") or "?"), doctor, ""
     if code == "aws_missing":
-        return "error", _("the aws command was not found"), doctor
+        return "error", _("the aws command was not found"), doctor, ""
     if code == "no_profiles":
-        return "error", _("this organization has no profiles in orgs.toml"), doctor
+        return "error", _("this organization has no profiles in orgs.toml"), doctor, ""
     if code == "timeout":
-        retry = _("try again, or check your network with: {cmd}", cmd="rolehop doctor")
-        return "error", _("AWS STS did not answer in time"), retry
+        return ("error", _("AWS STS did not answer in time"),
+                _("try again, or check your network with: {cmd}", cmd="rolehop doctor"), "")
     if code == "bad_response":
-        return "error", _("unexpected answer from aws sts"), doctor
-    return "error", _("no session ({reason})", reason=r.get("error") or "?"), _("run: {cmd}", cmd=f"rolehop login {org}")
+        return "error", _("unexpected answer from aws sts"), doctor, ""
+    return "error", _("AWS returned an error: {reason}", reason=r.get("error") or "?"), doctor, ""
+
+
+def print_status(results: list[dict]) -> None:
+    """Aligned status lines; a fix shared by several orgs is printed once at the end ("→ run: rolehop login")."""
+    rows = [(r, *status_line(r)) for r in results]
+    groups = [row[4] for row in rows if row[4]]
+    shared = {g for g in groups if groups.count(g) > 1}
+    width = max((len(r.get("org", "")) for r in results), default=0)
+    for r, kind, detail, fix, group in rows:
+        ui.item(kind, r.get("org", "?"), detail, "" if group in shared else fix, width=width)
+        ui.debug(f"{r.get('org')}: checked with profile {r.get('probe_profile')} (code={r.get('code')}); cached role "
+                 "credentials can show active for a while after the portal session ends")
+    for group in ("rolehop sync", "rolehop login"):
+        if group in shared:
+            ui.fix(_("run: {cmd}", cmd=group), indent=width + 4)
 
 
 def cmd_status(args) -> int:
@@ -109,13 +137,8 @@ def cmd_status(args) -> int:
     if args.json:
         print(json.dumps(results, indent=2))
         return 0 if all(r["ok"] for r in results) else 1
-    width = max((len(r["org"]) for r in results), default=0)
-    for r in results:
-        kind, detail, fix = status_line(r)
-        ui.item(kind, r["org"], detail, fix, width=width)
-        ui.debug(f"{r['org']}: checked with profile {r.get('probe_profile')}; cached role credentials can show "
-                 "active for a while after the portal session ends")
-    ready = sum(r["ok"] for r in results)
+    print_status(results)
+    ready = sum(bool(r["ok"]) for r in results)
     if len(results) > 1 and ready < len(results):
         ui.echo()
         ui.echo(_("{ready} of {total} organizations ready.", ready=ready, total=len(results)))
@@ -124,20 +147,34 @@ def cmd_status(args) -> int:
 
 def cmd_language(args) -> int:
     from rolehop import i18n
+    sources = {"flag": _("--lang option"), "env": "ROLEHOP_LANG", "settings": ui.short(paths.SETTINGS_PATH),
+               "system": _("system locale"), "default": _("default")}
     if args.code is None:
         lang, source = i18n.resolve()
-        sources = {"flag": _("--lang option"), "env": "ROLEHOP_LANG", "settings": str(paths.SETTINGS_PATH),
-                   "system": _("system locale"), "default": _("default")}
-        ui.echo(_("Language: {name} ({code}), from {source}.", name=i18n.NAMES[lang], code=lang, source=sources[source]))
-        ui.echo(_("Available: {list}. Change it with: rolehop language <code>  (auto = follow the system)",
+        ui.echo(_("Language: {name} ({code}) · source: {source}", name=i18n.NAMES[lang], code=lang,
+                  source=sources[source]))
+        ui.hint(_("Available: {list}. Change it with: rolehop language <code>  (auto = use the system language)",
                   list=", ".join(f"{c} ({n})" for c, n in i18n.NAMES.items())))
         return 0
-    i18n.write_language(None if args.code == "auto" else args.code)
+    try:
+        i18n.write_language(None if args.code == "auto" else args.code)
+    except (OSError, i18n.SettingsError) as exc:
+        ui.echo("✗ " + _("Could not save the language: {error}", error=exc), err=True)
+        ui.fix(_("edit {path} by hand and set: language = \"{code}\"", path=ui.short(paths.SETTINGS_PATH),
+                 code=args.code), indent=2, err=True)
+        return 1
     i18n.set_language(None)
     lang, source = i18n.resolve()
-    ui.echo("✓ " + _("Language set to {name} ({code}).", name=i18n.NAMES[lang], code=lang))
-    if args.code != "auto" and source != "settings":
-        ui.echo("! " + _("ROLEHOP_LANG or --lang is overriding it in this shell."))
+    if args.code == "auto":
+        ui.echo("✓ " + _("Language: automatic (follows the system), now {name} ({code}).", name=i18n.NAMES[lang],
+                         code=lang))
+    else:
+        ui.echo("✓ " + _("Saved language: {name} ({code}).", name=i18n.NAMES[args.code], code=args.code))
+    if source in ("env", "flag") and args.code != "auto":
+        ui.echo("! " + _("{override} overrides it in this terminal ({name}).", override=sources[source],
+                         name=i18n.NAMES[lang]))
+        if source == "env":
+            ui.fix(_("run: {cmd}", cmd="unset ROLEHOP_LANG"), indent=2)
     return 0
 
 
@@ -225,8 +262,12 @@ def cmd_discover(args) -> int:
     try:
         inv = portal.portal_inventory(org["name"], org["sso_region"])
     except errors.PortalError as exc:
-        ui.echo("✗ " + str(exc), err=True)
-        ui.echo("  → " + _("sign in first: {cmd}", cmd=f"rolehop login {org['name']}"), err=True)
+        if isinstance(exc, portal.LoginNeeded):
+            ui.echo("✗ " + exc.reason, err=True)
+            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}"), indent=2, err=True)
+        else:
+            ui.echo("✗ " + str(exc), err=True)
+            ui.fix(_("run: {cmd}", cmd="rolehop doctor"), indent=2, err=True)
         return 1
     print(f"# Accounts and roles visible in {org['name']} ({len(inv)}). Paste into orgs.toml and adjust the names.")
     for acc in inv:
@@ -361,10 +402,28 @@ COMMANDS = ("setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,di
             "completion,uninstall")
 
 
+HIDDEN_COMMANDS = {"hook", "_mark", "_which-org", "_complete"}
+
+
+class Parser(argparse.ArgumentParser):
+    """argparse with a friendlier message for unknown subcommands (no internal names, a "did you mean")."""
+
+    def _check_value(self, action, value):
+        if isinstance(action, argparse._SubParsersAction) and value not in action.choices:
+            import difflib
+            visible = [c for c in action.choices if c not in HIDDEN_COMMANDS]
+            close = difflib.get_close_matches(value, visible, n=1)
+            msg = _("unknown command: {cmd}", cmd=value) + ". "
+            msg += (_("Did you mean: {suggestion}?", suggestion=f"rolehop {close[0]}") if close
+                    else _("See the commands with: {cmd}", cmd="rolehop --help"))
+            raise argparse.ArgumentError(None, msg)
+        super()._check_value(action, value)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the full argument parser (also used to generate shell completion)."""
-    ap = argparse.ArgumentParser(
-        prog="rolehop",
+    ap = Parser(
+        prog="rolehop", allow_abbrev=False,
         description="rolehop: " + _("declarative AWS IAM Identity Center profiles for any number of organizations."))
     ap.add_argument("--version", action="version", version=f"rolehop {VERSION}")
     ap.add_argument("-v", "--verbose", action="store_true",
@@ -456,6 +515,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("_which-org")
     s.add_argument("profile")
     s.set_defaults(func=cmd_which_org)
+    # Global options also work after the subcommand (`rolehop status --lang es`); SUPPRESS keeps the top-level value.
+    for subparser in sub.choices.values():
+        subparser.allow_abbrev = False
+        subparser.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        subparser.add_argument("--lang", choices=["en", "es", "pt"], default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        subparser.add_argument("--no-color", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     return ap
 
 
@@ -465,6 +530,8 @@ QUIET_COMMANDS = ("hook", "_mark", "_which-org", "_complete", "completion", "uni
 def _preparse_lang(argv: list[str]) -> str | None:
     """Read --lang before building the parser, so --help itself is translated."""
     for i, arg in enumerate(argv):
+        if arg == "--":  # everything after belongs to the wrapped command (`rolehop run -- tool --lang x`)
+            break
         if arg == "--lang" and i + 1 < len(argv):
             return argv[i + 1]
         if arg.startswith("--lang="):
@@ -477,7 +544,13 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     i18n.set_language(_preparse_lang(argv))
     i18n.install_argparse_translations()
+    for stream in (sys.stdout, sys.stderr):  # never crash on terminals that cannot show ✓ or accents
+        enc = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if enc != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
+    if getattr(args, "lang", None):
+        i18n.set_language(args.lang)
     ui.set_verbose(args.verbose)
     ui.set_no_color(args.no_color)
     ui.debug(f"rolehop {VERSION} · config={paths.CONFIG_PATH} · aws_config={paths.AWS_CONFIG} · state={paths.STATE_DIR}")

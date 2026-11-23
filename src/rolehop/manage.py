@@ -441,7 +441,9 @@ def cmd_uninstall(args) -> int:
         shutil.rmtree(paths.STATE_DIR)
         ui.echo("✓ " + _("Deleted {path}", path=paths.STATE_DIR))
     if args.purge:
-        for path in [paths.CONFIG_PATH, *sorted(paths.CONFIG_PATH.parent.glob(f"{paths.CONFIG_PATH.name}.bak-*"))]:
+        for path in [paths.CONFIG_PATH, paths.SETTINGS_PATH,
+                     paths.SETTINGS_PATH.with_name(paths.SETTINGS_PATH.name + ".tmp"),
+                     *sorted(paths.CONFIG_PATH.parent.glob(f"{paths.CONFIG_PATH.name}.bak-*"))]:
             if path.exists():
                 path.unlink()
                 ui.echo("✓ " + _("Deleted {path}", path=path))
