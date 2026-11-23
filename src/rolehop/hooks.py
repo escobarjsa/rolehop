@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from rolehop import config, errors, paths, session
+from rolehop.i18n import _
 
 # Does the command touch AWS? An AWS program at the start of a segment (after ; & | ( or $( ), allowing wrappers
 # (time, nice, nohup, timeout N) and VAR=value assignments in front; or an explicit AWS_PROFILE=.
@@ -145,7 +146,8 @@ def post_tool(fmt: str = "claude", stdin: str | None = None) -> int:
         who = org or "<org>"
         if org:
             session.write_state(org, blocked=True, blocked_at=dt.datetime.now(dt.UTC).isoformat())
-        _herdr_title(f"⚠ AWS: run rolehop login {who}")
+        _herdr_title("! " + _("AWS: rolehop login {org}", org=who))  # short, human-visible pane title
+        # The context below is for the AI agent: it stays in English on purpose (agents reply in the user's language).
         msg = (f"AWS SSO: the session for organization '{who}' has expired (profile: {profile or 'unknown'}). "
                f"STOP using AWS: do not retry, and do not switch to another profile to work around it. Ask the user "
                f"to run this in their terminal: rolehop login {who} . Meanwhile, you can continue with tasks that do not "

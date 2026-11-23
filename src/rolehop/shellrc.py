@@ -7,6 +7,9 @@ import os
 import shutil
 from pathlib import Path
 
+from rolehop import ui
+from rolehop.i18n import _
+
 MARK_BEGIN = "# >>> rolehop (managed by rolehop setup) >>>"
 MARK_END = "# <<< rolehop <<<"
 # Markers written by older versions: recognized, replaced on setup and removed on uninstall.
@@ -92,6 +95,7 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
     add_direnv = has_direnv and not already_direnv
     wanted = block_for(shell, add_direnv)
     msgs: list[str] = []
+    shown = ui.short(rc)
     span = find_any_block(current, ALL_MARKS)
     if span is not None:
         start, end = span
@@ -105,22 +109,47 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
         while (old := find_block(new, legacy_begin, legacy_end)) is not None:
             new = new[:old[0]].rstrip("\n") + "\n" + new[old[1]:].lstrip("\n")
     if new == current:
-        msgs.append(f"✓ {rc} already has ~/.local/bin on PATH" + (" and direnv" if has_direnv else ""))
+        if has_direnv:
+            msgs.append("✓ " + _("{rc} already has ~/.local/bin on PATH and the direnv hook", rc=shown))
+        else:
+            msgs.append("✓ " + _("{rc} already has ~/.local/bin on PATH", rc=shown))
         return msgs
     if dry_run:
-        msgs.append(f"[dry-run] would add to {rc}: ~/.local/bin on PATH" + (" + direnv hook" if add_direnv else ""))
+        if add_direnv:
+            msgs.append(_("[dry-run]") + " " + _("would add to {rc}: ~/.local/bin on PATH and the direnv hook", rc=shown))
+        else:
+            msgs.append(_("[dry-run]") + " " + _("would add to {rc}: ~/.local/bin on PATH", rc=shown))
         return msgs
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
-        msgs.append(f"✓ backup: {backup}")
+        msgs.append("✓ " + _("Backup: {path}", path=ui.short(backup)))
     target.write_text(new)
-    msgs.append(f"✓ {rc}: ~/.local/bin on PATH" + (" and direnv hook" if add_direnv else ""))
+    if add_direnv:
+        msgs.append("✓ " + _("{rc}: added ~/.local/bin to PATH and the direnv hook", rc=shown))
+    else:
+        msgs.append("✓ " + _("{rc}: added ~/.local/bin to PATH", rc=shown))
     on_path = any(str(d) in os.environ.get("PATH", "").split(os.pathsep) for d in bin_dirs())
     if not on_path:
-        msgs.append(f"! Open a new terminal (or run: exec {shell}) for the PATH change to take effect.")
+        msgs.append("! " + _("The PATH change applies to new terminals. Open one, or run: exec {shell}", shell=shell))
     return msgs
+
+
+def installed_rc_files(home: Path | None = None) -> list[Path]:
+    """The zsh, bash and fish rc files that contain a rolehop block (current or legacy)."""
+    home = home or Path.home()
+    found = []
+    for shell in ("zsh", "bash", "fish"):
+        rc = rc_file(shell, home)
+        target = rc.resolve() if rc.is_symlink() else rc
+        try:
+            text = target.read_text() if target.exists() else ""
+        except OSError:
+            continue
+        if find_any_block(text, ALL_MARKS) is not None:
+            found.append(rc)
+    return found
 
 
 def remove_shell_integration(home: Path | None = None) -> list[str]:
@@ -143,5 +172,6 @@ def remove_shell_integration(home: Path | None = None) -> list[str]:
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
         target.write_text(new)
-        msgs.append(f"✓ {rc}: rolehop block removed (backup: {backup.name})")
+        msgs.append("✓ " + _("{rc}: removed the block added by rolehop (backup: {backup})", rc=ui.short(rc),
+                             backup=backup.name))
     return msgs

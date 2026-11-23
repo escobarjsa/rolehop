@@ -21,6 +21,7 @@ nav = [
     "guide/ai-agents.md",
     "guide/unattended-work.md",
     "guide/per-repo-defaults.md",
+    "guide/language.md",
   ] },
   { "Reference" = [
     "reference/cli.md",

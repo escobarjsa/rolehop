@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 import subprocess
 
-from rolehop import config, session
+from rolehop import config, session, ui
+from rolehop.i18n import _
 
 MARGIN_MIN = 15
 
@@ -26,56 +27,72 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
     from rolehop import cli
     max_min = parse_minutes(max_value)
     if not max_min:
-        print(f"✗ Invalid duration: {max_value} (use 90m, 3h, 1h30m)")
+        ui.echo("✗ " + _("Invalid duration: {value}. Use a value like 90m, 3h or 1h30m.", value=max_value), err=True)
         return 2
     need = max_min + MARGIN_MIN
     orgs = config.select(config.load_orgs(), orgs_names)
     if login:
-        print("→ Renewing the session so the full window starts now…")
+        ui.echo(_("Renewing the session so the full window starts now…"))
         rc = cli.cmd_login(type("A", (), {"orgs": [o["name"] for o in orgs], "force": True, "device": False})())
         if rc != 0:
-            print("✗ Login failed.")
+            ui.echo("✗ " + _("Login failed: not starting."), err=True)
             return 1
     fail = False
+    groups: set[str] = set()
+    width = max((len(o["name"]) for o in orgs), default=0)
     for org in orgs:
+        name = org["name"]
         r = session.check_org(org)
         left = r.get("estimated_left_min")
         if not r["ok"]:
-            print(f"✗ {org['name']}: no session. Run: rolehop login {org['name']}   (or use --login)")
+            kind, detail, fix, group = cli.status_line(r)
+            ui.item(kind, name, detail, "" if group else fix, width=width)  # sync/login are solved by one command below
+            groups.add(group)
             fail = True
         elif left is None:
             if yes:
-                print(f"! {org['name']}: session active, time remaining unknown (continuing because of --yes)")
+                ui.item("warn", name, _("session active, time left unknown (continuing because of --yes)"), width=width)
             else:
-                print(f"! {org['name']}: session active but time remaining is unknown. Use --login (recommended) or --yes.")
+                ui.item("warn", name, _("session active, but the time left is unknown"),
+                        _("run: {cmd}", cmd=f"rolehop run --login --max {max_value}"), width=width)
                 fail = True
         elif left < need:
-            best = max(left - MARGIN_MIN, 0)
+            best = fmt(max(left - MARGIN_MIN, 0))
             if login:
-                print(f"✗ {org['name']}: the access portal session lasts ~{fmt(left)} and you asked for {max_value} "
-                      f"(+{MARGIN_MIN}m margin). Use at most --max {fmt(best)} or split the work.")
+                ui.item("error", name, _("the access portal session lasts ~{left}; you asked for {max} (+{margin}m margin)",
+                                         left=fmt(left), max=max_value, margin=MARGIN_MIN),
+                        _("split the work, or run: {cmd}", cmd=f"rolehop run --max {best}"), width=width)
             else:
-                print(f"✗ {org['name']}: ~{fmt(left)} left and the work needs {fmt(need)} (including margin). "
-                      f"Use --login to renew, or --max {fmt(best)}.")
+                ui.item("warn", name, _("~{left} left; the work needs {need} (margin included)",
+                                        left=fmt(left), need=fmt(need)),
+                        _("run: {cmd}", cmd=f"rolehop run --login --max {max_value}"), width=width)
             fail = True
         else:
-            print(f"✓ {org['name']}: ~{fmt(left)} left (you need {fmt(need)}).")
+            ui.item("ok", name, _("~{left} left (you need {need})", left=fmt(left), need=fmt(need)), width=width)
     if fail:
-        print(f"Not starting: the session will not last for --max {max_value}.")
+        ui.echo(err=True)
+        ui.echo("✗ " + _("Nothing was started: the session does not last long enough for --max {max}.", max=max_value),
+                err=True)
+        if "rolehop sync" in groups:
+            ui.fix(_("run: {cmd}", cmd="rolehop sync"), indent=2, err=True)
+        if "rolehop login" in groups:
+            ui.fix(_("run: {cmd}", cmd=f"rolehop run --login --max {max_value}"), indent=2, err=True)
         return 75
     if not command:
-        print(f"✓ Ready: the session will last ~{max_value}. You can leave your agent working.")
-        print("  If it expires earlier, you can approve the login from your phone (device code: rolehop login).")
+        ui.echo()
+        ui.echo("✓ " + _("Ready: the session lasts at least {max}. You can leave your agent working.", max=max_value))
+        ui.hint(_("If it expires earlier, approve the login from your phone (device code: rolehop login)."))
         return 0
-    print(f"→ Running: {' '.join(command)}")
+    ui.echo(_("Running: {cmd}", cmd=" ".join(command)))
     try:
         rc = subprocess.run(command).returncode
     except FileNotFoundError:
-        print(f"✗ Command not found: {command[0]}")
+        ui.echo("✗ " + _("Command not found: {cmd}", cmd=command[0]), err=True)
         return 127
     blocked = [o["name"] for o in orgs if session.read_state(o["name"]).get("blocked")]
     if blocked:
-        print(f"\n⚠ The AWS session ended during the work in: {' '.join(blocked)}")
-        print(f"  1) rolehop login {' '.join(blocked)}")
-        print("  2) Resume your agent's conversation (in Claude Code: claude --continue).")
+        ui.echo()
+        ui.echo("! " + _("The AWS session ended during the work in: {orgs}", orgs=" ".join(blocked)))
+        ui.fix(_("run: {cmd}", cmd=f"rolehop login {' '.join(blocked)}"), indent=2)
+        ui.fix(_("then resume your agent's conversation (in Claude Code: claude --continue)"), indent=2)
     return rc

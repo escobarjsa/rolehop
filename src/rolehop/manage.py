@@ -11,25 +11,32 @@ import copy
 import hashlib
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from rolehop import awsconfig, cli, config, errors, paths, portal, session
+from rolehop import awsconfig, cli, config, errors, paths, portal, session, ui
+from rolehop.i18n import _
 
-EDIT_NOTE = "  (orgs.toml is rewritten in full: hand-written comments are not preserved; a backup is kept.)"
+
+def _edit_note() -> None:
+    """Shown before asking or writing, so the user can still say no."""
+    ui.hint(_("orgs.toml is rewritten in full: hand-written comments are not kept (a backup is saved)."))
 
 
 # --------------------------------------------------------------------------- helpers
-def _confirm(question: str, assume_yes: bool) -> bool:
+def _confirm(question: str, assume_yes: bool, command: list[str]) -> bool:
+    """Ask before a destructive change. Without a terminal, print the same command with --yes to copy."""
     if assume_yes:
         return True
     if not sys.stdin.isatty():
-        print("✗ Confirmation required: rerun with --yes (or preview with --dry-run).", file=sys.stderr)
+        ui.echo("✗ " + _("Confirmation required, but there is no terminal to ask in."), err=True)
+        ui.fix(_("run: {cmd}", cmd=shlex.join([*command, "--yes"])), indent=2, err=True)
         return False
-    return input(f"{question} [y/N]: ").strip().lower().startswith(("s", "y"))
+    return input(f"{question} {_('[y/N]')} ").strip().lower().startswith(("s", "y"))
 
 
 def _validate(orgs: list[dict]) -> None:
@@ -48,11 +55,12 @@ def _validate(orgs: list[dict]) -> None:
 def _precheck_sync(orgs: list[dict], prune_only: list[str] | None = None) -> None:
     """Compute the ~/.aws/config that `sync` would produce, before writing anything, and check that it is valid."""
     current = paths.AWS_CONFIG.read_text() if paths.AWS_CONFIG.exists() else ""
-    _, _, conflicts = awsconfig.plan_sync(orgs, current, prune_only=set(prune_only or []))  # ConfigError if invalid
+    conflicts = awsconfig.plan_sync(orgs, current, prune_only=set(prune_only or []))[2]  # ConfigError if invalid
     problems = [f"[{org}] {c}" for org, items in conflicts.items() for c in items]
     if problems:
-        raise errors.ConfigError(f"Sections in {paths.AWS_CONFIG} outside the rolehop blocks conflict with "
-                              f"new profiles: {', '.join(problems)}. Rename or delete them and try again.")
+        raise errors.ConfigError(_("Sections in {path} outside the managed blocks conflict with new profiles: {items}. "
+                                   "Rename or delete them and try again.", path=ui.short(paths.AWS_CONFIG),
+                                   items=", ".join(problems)))
 
 
 def _save(orgs: list[dict], prune_only: list[str] | None = None) -> None:
@@ -73,11 +81,17 @@ def _token_cache(session: str) -> Path:
 def _forget_org_local(name: str, dry_run: bool) -> list[str]:
     """Delete the rolehop state and the cached SSO token of an org (signs it out on this machine)."""
     msgs = []
-    for path, label in ((session.state_file(name), "state"), (_token_cache(name), "cached SSO token")):
-        if path.exists():
-            if not dry_run:
-                path.unlink()
-            msgs.append(f"{'[dry-run] would delete' if dry_run else '✓ deleted'} {label} for {name}: {path}")
+    state, token = session.state_file(name), _token_cache(name)
+    if state.exists():
+        if not dry_run:
+            state.unlink()
+        msgs.append("- " + _("local state of {org}: {path}", org=name, path=ui.short(state)) if dry_run
+                    else "✓ " + _("Deleted the local state of {org}: {path}", org=name, path=ui.short(state)))
+    if token.exists():
+        if not dry_run:
+            token.unlink()
+        msgs.append("- " + _("cached SSO token of {org}: {path}", org=name, path=ui.short(token)) if dry_run
+                    else "✓ " + _("Deleted the cached SSO token of {org}: {path}", org=name, path=ui.short(token)))
     return msgs
 
 
@@ -85,7 +99,8 @@ def _drop_probe_if_missing(org: dict, changes: list[str]) -> None:
     pp = org.get("probe_profile")
     if pp and pp not in {r["profile"] for r in config.catalog([org])}:
         del org["probe_profile"]
-        changes.append(f"! probe_profile {pp} no longer exists: removing it (status will use default_role)")
+        changes.append("! " + _("probe_profile {profile} no longer exists: removing it (status will use default_role)",
+                                profile=pp))
 
 
 def _profiles(org: dict) -> set[str]:
@@ -101,8 +116,8 @@ def plan_refresh(org: dict, inventory: list[dict], prune: bool) -> tuple[dict, l
     """
     name = org["name"]
     if prune and not inventory:
-        raise errors.ConfigError(f"[{name}] the access portal returned no accounts: not applying --prune "
-                              f"(temporary loss of access?). Without --prune, accounts are only added.")
+        raise errors.ConfigError(_("[{org}] the access portal returned no accounts: not applying --prune "
+                                   "(temporary loss of access?). Without --prune, accounts are only added.", org=name))
     before = _profiles(org)
     org = copy.deepcopy(org)
     roles_map = org.setdefault("roles", {})
@@ -115,7 +130,6 @@ def plan_refresh(org: dict, inventory: list[dict], prune: bool) -> tuple[dict, l
 
     live_by_id = {str(a["id"]): a for a in inventory}
     protected = {ar["source"] for ar in org.get("assume_roles", [])}  # "<account>-<role>" used by assume_roles
-    hint = "" if prune else " (use --prune to remove it)"
     changes: list[str] = []
     removed: set[str] = set()
     kept: list[dict] = []
@@ -123,20 +137,21 @@ def plan_refresh(org: dict, inventory: list[dict], prune: bool) -> tuple[dict, l
         pairs = config.role_pairs(org, acc)
         live = live_by_id.get(str(acc["id"]))
         if live is None:
-            locked = [(r, k) for r, (k, _) in zip(acc["roles"], pairs, strict=True) if f"{acc['name']}-{k}" in protected]
+            locked = [(r, k) for r, (k, _ps) in zip(acc["roles"], pairs, strict=True) if f"{acc['name']}-{k}" in protected]
             if not prune:
-                changes.append(f"! account {acc['name']} ({acc['id']}): no longer listed in the portal{hint}")
+                changes.append("! " + _("Account {account} ({id}): no longer listed in the access portal "
+                                        "(use --prune to remove it)", account=acc["name"], id=acc["id"]))
                 kept.append(acc)
                 continue
-            gone = {f"{name}-{acc['name']}-{k}" for k, _ in pairs} - {f"{name}-{acc['name']}-{k}" for _, k in locked}
+            gone = {f"{name}-{acc['name']}-{k}" for k, _ps in pairs} - {f"{name}-{acc['name']}-{k}" for _r, k in locked}
             removed |= gone
             if not locked:
-                changes.append(f"- account {acc['name']} ({acc['id']}): you no longer have access")
+                changes.append("- " + _("Account {account} ({id}): you no longer have access", account=acc["name"], id=acc["id"]))
                 continue
-            acc["roles"] = [r for r, _ in locked]
-            keep = ", ".join(f"{acc['name']}-{k}" for _, k in locked)
-            changes.append(f"! account {acc['name']} ({acc['id']}): no longer listed in the portal; "
-                           f"keeping only {keep} (used by assume_roles)")
+            acc["roles"] = [r for r, _k in locked]
+            keep = ", ".join(f"{acc['name']}-{k}" for _r, k in locked)
+            changes.append("! " + _("Account {account} ({id}): no longer listed in the access portal; keeping only "
+                                    "{profiles} (used by assume_roles)", account=acc["name"], id=acc["id"], profiles=keep))
             kept.append(acc)
             continue
         live_ps = set(live["roles"])
@@ -147,20 +162,25 @@ def plan_refresh(org: dict, inventory: list[dict], prune: bool) -> tuple[dict, l
                 roles.append(role)
             elif prune and f"{acc['name']}-{key}" not in protected:
                 removed.add(profile)
-                changes.append(f"- role {profile} ({ps}): revoked")
+                changes.append("- " + _("Role {profile} ({role}): revoked", profile=profile, role=ps))
             else:
                 roles.append(role)
-                why = " (used by assume_roles)" if prune else hint
-                changes.append(f"! role {profile} ({ps}): revoked in the portal{why}")
-        have = {ps for _, ps in pairs}
+                if prune:
+                    msg = _("Role {profile} ({role}): revoked in the access portal (used by assume_roles)",
+                            profile=profile, role=ps)
+                else:
+                    msg = _("Role {profile} ({role}): revoked in the access portal (use --prune to remove it)",
+                            profile=profile, role=ps)
+                changes.append("! " + msg)
+        have = {ps for _k, ps in pairs}
         for ps in live["roles"]:
             if ps not in have:
                 r = ref(ps)
                 roles.append(r)
-                key = next(k for rr, (k, _) in zip(roles, config.role_pairs(org, {"roles": roles}), strict=True) if rr == r)
-                changes.append(f"+ role {name}-{acc['name']}-{key} ({ps})")
+                key = next(k for rr, (k, _ps) in zip(roles, config.role_pairs(org, {"roles": roles}), strict=True) if rr == r)
+                changes.append("+ " + _("Role {profile} ({role})", profile=f"{name}-{acc['name']}-{key}", role=ps))
         if not roles:
-            changes.append(f"- account {acc['name']} ({acc['id']}): no roles left")
+            changes.append("- " + _("Account {account} ({id}): no roles left", account=acc["name"], id=acc["id"]))
             continue
         acc["roles"] = roles
         kept.append(acc)
@@ -176,17 +196,17 @@ def plan_refresh(org: dict, inventory: list[dict], prune: bool) -> tuple[dict, l
         used.add(acc_name)
         acc = {"name": acc_name, "id": str(live["id"]), "roles": [ref(ps) for ps in live["roles"]]}
         kept.append(acc)
-        keys = [k for k, _ in config.role_pairs(org, acc)]
-        changes.append(f"+ account {acc_name} ({acc['id']}): {', '.join(keys)}")
+        keys = [k for k, _ps in config.role_pairs(org, acc)]
+        changes.append("+ " + _("Account {account} ({id}): {roles}", account=acc_name, id=acc["id"], roles=", ".join(keys)))
     org["accounts"] = kept
     _drop_probe_if_missing(org, changes)
     lost = before - _profiles(org) - removed
     if lost:
-        raise errors.ConfigError(f"[{name}] refresh would rename existing profiles ({', '.join(sorted(lost))}); "
-                              f"not applied. Check [org.roles] in orgs.toml.")
+        raise errors.ConfigError(_("[{org}] refresh would rename existing profiles ({profiles}); not applied. "
+                                   "Check [org.roles] in orgs.toml.", org=name, profiles=", ".join(sorted(lost))))
     if not org["accounts"] and not org.get("assume_roles"):
-        raise errors.ConfigError(f"[{name}] --prune would leave the organization with no profiles; not applied. "
-                              f"If you no longer use it: rolehop remove {name}")
+        raise errors.ConfigError(_("[{org}] --prune would leave the organization with no profiles; not applied. "
+                                   "If you no longer use it, run: {cmd}", org=name, cmd=f"rolehop remove {name}"))
     return org, changes, removed
 
 
@@ -205,7 +225,7 @@ def cmd_refresh(args) -> int:
     if args.login:
         rc = cli.cmd_login(argparse.Namespace(orgs=sorted(targets), force=False, device=False))
         if rc != 0:
-            print("✗ Login failed.", file=sys.stderr)
+            ui.echo("✗ " + _("Login failed: nothing was changed."), err=True)
             return 1
     updated, failed, removals, any_change = [], [], set(), False
     for org in orgs:
@@ -216,39 +236,43 @@ def cmd_refresh(args) -> int:
             inventory = _read_portal(org)
             new_org, changes, removed = plan_refresh(org, inventory, args.prune)
         except errors.PortalError as exc:
-            print(f"✗ {org['name']}: could not read the access portal ({exc}). Run: rolehop login {org['name']}  "
-                  f"(or use --login)", file=sys.stderr)
+            reason = exc.reason if isinstance(exc, portal.LoginNeeded) else str(exc)
+            ui.echo("✗ " + _("{org}: could not read the access portal ({reason}).", org=org["name"], reason=reason),
+                    err=True)
+            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}"), indent=2, err=True)
             failed.append(org["name"])
             updated.append(org)
             continue
         except errors.ConfigError as exc:
-            print(f"✗ {exc}", file=sys.stderr)
+            ui.echo(f"✗ {exc}", err=True)
             failed.append(org["name"])
             updated.append(org)
             continue
         if changes:
-            print(f"{org['name']}: {len(inventory)} account(s) in the portal")
+            ui.echo(_("{org} · accounts in the access portal: {count}", org=org["name"], count=len(inventory)))
             for c in changes:
-                print(f"  {c}")
+                ui.echo(f"  {c}")
         else:
-            print(f"✓ {org['name']}: no changes ({len(inventory)} accounts in the portal)")
+            ui.echo("✓ " + _("{org}: no changes · accounts in the access portal: {count}",
+                             org=org["name"], count=len(inventory)))
         any_change = any_change or new_org != org
         removals |= removed
         updated.append(new_org)
     rc_failed = 1 if failed else 0
+    command = ["rolehop", "refresh", *args.orgs, *(["--prune"] if args.prune else [])]
     if args.dry_run:
         if any_change:
-            print("\n(dry run: nothing was written. Rerun without --dry-run to apply.)")
+            ui.dry_run_footer(shlex.join(command))
         return rc_failed
     if any_change:
-        if removals and not _confirm(f"{len(removals)} profile(s) will be removed. Continue?", args.yes):
+        _edit_note()
+        if removals and not _confirm(_("Profiles to remove: {count}. Continue?", count=len(removals)), args.yes, command):
             return 1
         try:
             _save(updated)
         except errors.ConfigError as exc:
-            print(f"✗ Nothing was written: {exc}", file=sys.stderr)
+            ui.echo("✗ " + _("Nothing was written: {error}", error=exc), err=True)
             return 2
-        print(EDIT_NOTE)
     # Always keep ~/.aws/config in sync with orgs.toml, even when nothing changed this time.
     return _sync() or rc_failed
 
@@ -263,18 +287,20 @@ def _resolve(orgs: list[dict], target: str) -> tuple[str, dict, Any]:
         for acc in org["accounts"]:
             if target == f"{org['name']}-{acc['name']}":
                 matches.append(("account", org, acc))
-            for role, (key, _) in zip(acc["roles"], config.role_pairs(org, acc), strict=True):
+            for role, (key, _ps) in zip(acc["roles"], config.role_pairs(org, acc), strict=True):
                 if target == f"{org['name']}-{acc['name']}-{key}":
                     matches.append(("profile", org, (acc, role, key)))
         for ar in org["assume_roles"]:
             if target == f"{org['name']}-{ar['name']}":
                 matches.append(("assume", org, ar))
     if not matches:
-        raise errors.ConfigError(f"'{target}' not found among your organizations, accounts or profiles. See `rolehop list`.")
+        raise errors.ConfigError(_("'{target}' not found among your organizations, accounts or profiles. "
+                                   "See `rolehop list`.", target=target))
     if len(matches) > 1:
-        labels = {"org": "organization", "account": "account", "profile": "profile", "assume": "chained role"}
-        found = ", ".join(f"{labels[k]} in {o['name']}" for k, o, _ in matches)
-        raise errors.ConfigError(f"'{target}' is ambiguous ({found}). Edit orgs.toml by hand to remove the one you want.")
+        labels = {"org": _("organization"), "account": _("account"), "profile": _("profile"), "assume": _("chained role")}
+        found = ", ".join(_("{kind} in {org}", kind=labels[k], org=o["name"]) for k, o, _item in matches)
+        raise errors.ConfigError(_("'{target}' is ambiguous ({found}). Edit orgs.toml by hand to remove the one you want.",
+                                   target=target, found=found))
     return matches[0]
 
 
@@ -287,57 +313,61 @@ def cmd_remove(args) -> int:
         if kind == "org":
             orgs = [o for o in orgs if o["name"] != org["name"]]
             removed_orgs.append(org["name"])
-            plan.append(f"- organization {org['name']} ({len(config.catalog([org]))} profile(s), "
-                        f"its sso-session and its local session)")
+            plan.append("- " + _("organization {org}, with its sso-session and local session · profiles: {count}",
+                                 org=org["name"], count=len(config.catalog([org]))))
             continue
         sources = {ar["source"] for ar in org["assume_roles"]}
         if kind == "assume":
             org["assume_roles"] = [a for a in org["assume_roles"] if a is not item]
-            plan.append(f"- profile {target} (chained role)")
+            plan.append("- " + _("profile {profile} (chained role)", profile=target))
         elif kind == "account":
-            own = {f"{item['name']}-{k}" for k, _ in config.role_pairs(org, item)}
+            own = {f"{item['name']}-{k}" for k, _ps in config.role_pairs(org, item)}
             used = sorted(own & sources)
             if used:
-                raise errors.ConfigError(f"Account {target} is the source of assume_roles ({', '.join(used)}): "
-                                         "remove them first.")
+                raise errors.ConfigError(_("Account {account} is the source of assume_roles ({profiles}): remove them first.",
+                                           account=target, profiles=", ".join(used)))
             org["accounts"] = [a for a in org["accounts"] if a is not item]
-            plan.append(f"- account {target} ({item['id']}) and its {len(item['roles'])} profile(s)")
+            plan.append("- " + _("account {account} ({id}) · profiles: {count}",
+                                 account=target, id=item["id"], count=len(item["roles"])))
         else:
             acc, role, key = item
             if f"{acc['name']}-{key}" in sources:
-                raise errors.ConfigError(f"Profile {target} is the source of an assume_role: remove that chained role first.")
+                raise errors.ConfigError(_("Profile {profile} is the source of an assume_role: remove that chained role first.",
+                                           profile=target))
             acc["roles"] = [r for r in acc["roles"] if r != role]
-            plan.append(f"- profile {target}")
+            plan.append("- " + _("profile {profile}", profile=target))
             if not acc["roles"]:
                 org["accounts"] = [a for a in org["accounts"] if a is not acc]
-                plan.append(f"  (account {org['name']}-{acc['name']} has no roles left: removing it)")
+                plan.append("  " + _("(account {account} has no roles left: removing it)",
+                                     account=f"{org['name']}-{acc['name']}"))
         if not org["accounts"] and not org["assume_roles"]:
-            raise errors.ConfigError(f"Organization {org['name']} would be left empty: use `rolehop remove {org['name']}`.")
+            raise errors.ConfigError(_("Organization {org} would be left empty: use `rolehop remove {org}`.", org=org["name"]))
         notes: list[str] = []
         _drop_probe_if_missing(org, notes)
         plan += [f"  {n}" for n in notes]
     if not orgs:
-        raise errors.ConfigError("Cannot remove every organization: use `rolehop uninstall` instead.")
-    print("The following will be removed:")
+        raise errors.ConfigError(_("Cannot remove every organization: use `rolehop uninstall` instead."))
+    ui.echo(_("The following will be removed:"))
     for line in plan:
-        print(f"  {line}")
+        ui.echo(f"  {line}")
     _validate(orgs)
     _precheck_sync(orgs, removed_orgs)
+    command = ["rolehop", "remove", *args.targets]
     if args.dry_run:
         for name in removed_orgs:
             for m in _forget_org_local(name, True):
-                print(f"  {m}")
-        print("\n(dry run: nothing was written.)")
+                ui.echo(f"  {m}")
+        ui.dry_run_footer(shlex.join(command))
         return 0
-    print(EDIT_NOTE)
-    if not _confirm("Continue?", args.yes):
+    _edit_note()
+    if not _confirm(_("Continue?"), args.yes, command):
         return 1
     _save(orgs, removed_orgs)
     rc = _sync(prune_only=removed_orgs)
     if rc == 0:
         for name in removed_orgs:
             for m in _forget_org_local(name, False):
-                print(m)
+                ui.echo(m)
     return rc
 
 
@@ -350,6 +380,14 @@ def _strip_managed_blocks(current: str) -> tuple[str, list[str]]:
         new = awsconfig.drop_placeholder(new, token)
     configparser.RawConfigParser(strict=True, interpolation=None).read_string(new)
     return new, sorted(blocks)
+
+
+def _purge_targets() -> list[Path]:
+    """Files and folders `uninstall --purge` deletes, among those that exist."""
+    files = [paths.CONFIG_PATH, paths.SETTINGS_PATH, paths.SETTINGS_PATH.with_name(paths.SETTINGS_PATH.name + ".tmp"),
+             *sorted(paths.CONFIG_PATH.parent.glob(f"{paths.CONFIG_PATH.name}.bak-*"))]
+    legacy = [paths.LEGACY_CONFIG_PATH.parent, paths.LEGACY_STATE_DIR]
+    return [f for f in files if f.exists()] + [d for d in legacy if d.is_dir()]
 
 
 def cmd_uninstall(args) -> int:
@@ -366,88 +404,114 @@ def cmd_uninstall(args) -> int:
     except (errors.ConfigError, configparser.Error) as exc:
         new_aws, blocks, aws_error = current, [], str(exc)
     sessions = sorted(set(org_names) | set(blocks))
+    tokens = [] if aws_error else [name for name in sessions if _token_cache(name).exists()]
     home = Path.home()
+    installed = [a.name for a in agents.AGENTS.values() if agents.has_leftovers(a, home)]
+    rc_files = shellrc.installed_rc_files(home)
+    purge = _purge_targets() if args.purge else []
     aws_dir = paths.AWS_CONFIG.parent
     aws_backups = sorted(aws_dir.glob(f"{paths.AWS_CONFIG.name}.bak-*")) if aws_dir.exists() else []
+    tool = "pipx uninstall rolehop" if "pipx" in sys.prefix else "uv tool uninstall rolehop"
+    aws_path = ui.short(paths.AWS_CONFIG)
 
-    print("rolehop uninstall will remove:")
-    if aws_error:
-        print(f"  ! {paths.AWS_CONFIG}: cannot clean it up ({aws_error}). Skipping it, along with your SSO sessions.")
-    else:
-        print(f"  - {len(blocks)} profile block(s) in {paths.AWS_CONFIG}: {', '.join(blocks) or '(none)'}")
-    print("  - rules and hooks for every AI agent")
-    print("  - the rolehop block in your shell (PATH and direnv)")
-    print(f"  - the rolehop state ({paths.STATE_DIR})")
-    if not aws_error:
-        print(f"  - cached SSO tokens for: {', '.join(sessions) or '(none)'}")
-    if args.purge:
-        print(f"  - ALSO {paths.CONFIG_PATH}, its backups and the legacy awsorg configuration")
-    else:
-        print(f"  (keeping {paths.CONFIG_PATH}; use --purge to delete it)")
-    if aws_backups:
-        print(f"  ({len(aws_backups)} {paths.AWS_CONFIG.name}.bak-* backup(s) remain: they contain your profiles; "
-              f"delete them if you like)")
-    if args.dry_run:
-        print("\n(dry run: nothing was changed.)")
+    # The plan lists only what is actually on this machine.
+    plan: list[str] = []
+    if blocks:
+        plan.append(_("profile blocks in {path}: {names}", path=aws_path, names=", ".join(blocks)))
+    if installed:
+        plan.append(_("rules and hooks of these AI agents: {names}", names=", ".join(installed)))
+    if rc_files:
+        plan.append(_("the shell integration block (PATH and direnv) in: {paths}",
+                      paths=", ".join(ui.short(f) for f in rc_files)))
+    if paths.STATE_DIR.is_dir():
+        plan.append(_("the local state ({path})", path=ui.short(paths.STATE_DIR)))
+    if tokens:
+        plan.append(_("cached SSO tokens for: {names}", names=", ".join(tokens)))
+    if purge:
+        plan.append(_("ALSO your configuration: {paths}", paths=", ".join(ui.short(f) for f in purge)))
+    if not plan and not aws_error:
+        ui.echo("✓ " + _("Nothing to uninstall: this machine has nothing set up by rolehop."))
+        if paths.CONFIG_PATH.exists() and not args.purge:
+            ui.hint("  " + _("Keeping {path}; add --purge to delete it too.", path=ui.short(paths.CONFIG_PATH)))
+        ui.fix(_("to also remove the command itself, run: {cmd}", cmd=tool), indent=2)
         return 0
-    if not _confirm("Uninstall?", args.yes):
+
+    ui.echo(_("rolehop uninstall will remove:"))
+    if aws_error:
+        ui.echo("  ! " + _("{path}: cannot clean it up ({error}). Skipping it, along with your SSO sessions.",
+                           path=aws_path, error=aws_error))
+    for line in plan:
+        ui.echo("  - " + line)
+    if paths.CONFIG_PATH.exists() and not args.purge:
+        ui.hint("  " + _("Keeping {path}; add --purge to delete it too.", path=ui.short(paths.CONFIG_PATH)))
+    if aws_backups:
+        ui.hint("  " + _("Backups left in place ({name}.bak-*): {count}. They contain your profiles; delete them if "
+                         "you no longer need them.", count=len(aws_backups), name=aws_path))
+    command = ["rolehop", "uninstall", *(["--purge"] if args.purge else [])]
+    if args.dry_run:
+        ui.dry_run_footer(shlex.join(command))
+        return 0
+    if not _confirm(_("Uninstall?"), args.yes, command):
         return 1
 
     if not aws_error and blocks:
         awsconfig.write_aws_config(new_aws)
-        print(f"✓ {paths.AWS_CONFIG}: rolehop profiles removed")
+        ui.echo("✓ " + _("{path}: profiles removed", path=aws_path))
     ch = agents.Changes(False)
     for a in agents.AGENTS.values():
         agents.uninstall(a, home, ch)
     for line in ch.lines:
-        print(line)
+        ui.echo(line)
     for m in shellrc.remove_shell_integration():
-        print(m)
+        ui.echo(m)
     if not aws_error:
         for name in sessions:
             for m in _forget_org_local(name, False):
-                print(m)
+                ui.echo(m)
     if paths.STATE_DIR.is_dir():
         shutil.rmtree(paths.STATE_DIR)
-        print(f"✓ deleted {paths.STATE_DIR}")
+        ui.echo("✓ " + _("Deleted {path}", path=ui.short(paths.STATE_DIR)))
+    for path in purge:
+        if path.is_dir():
+            shutil.rmtree(path)
+            ui.echo("✓ " + _("Deleted {path} (awsorg)", path=ui.short(path)))
+        elif path.exists():
+            path.unlink()
+            ui.echo("✓ " + _("Deleted {path}", path=ui.short(path)))
     if args.purge:
-        for path in [paths.CONFIG_PATH, *sorted(paths.CONFIG_PATH.parent.glob(f"{paths.CONFIG_PATH.name}.bak-*"))]:
-            if path.exists():
-                path.unlink()
-                print(f"✓ deleted {path}")
-        for legacy in (paths.LEGACY_CONFIG_PATH.parent, paths.LEGACY_STATE_DIR):
-            if legacy.is_dir():
-                shutil.rmtree(legacy)
-                print(f"✓ deleted {legacy} (awsorg)")
         try:
             paths.CONFIG_PATH.parent.rmdir()  # only if it is now empty
         except OSError:
             pass
-    tool = "pipx uninstall rolehop" if "pipx" in sys.prefix else "uv tool uninstall rolehop"
+    ui.echo()
     if aws_error:
-        print(f"\n✗ Uninstall incomplete: remove the rolehop blocks from {paths.AWS_CONFIG} by hand and try again.")
+        ui.echo("✗ " + _("Uninstall incomplete: {path} could not be cleaned up.", path=aws_path), err=True)
+        ui.fix(_("remove the managed blocks from {path} by hand, then run: {cmd}", path=aws_path,
+                 cmd="rolehop uninstall"), indent=2, err=True)
         return 1
-    print(f"\nDone. To remove the command: {tool}")
+    ui.echo("✓ " + _("Uninstalled. To also remove the command itself:"))
+    ui.fix(_("run: {cmd}", cmd=tool), indent=2)
     return 0
 
 
 def register(sub) -> None:
-    s = sub.add_parser("refresh", help="reload accounts and roles from the access portal (after your permissions change)")
-    s.add_argument("orgs", nargs="*", help="organizations (default: all)")
-    s.add_argument("--prune", action="store_true", help="also remove revoked accounts and roles (asks for confirmation)")
-    s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--login", action="store_true", help="sign in first if needed")
-    s.add_argument("--yes", action="store_true", help="do not ask for confirmation when removing profiles")
+    s = sub.add_parser("refresh", help=_("reload accounts and roles from the access portal (after your permissions change)"))
+    s.add_argument("orgs", nargs="*", help=_("organizations (default: all)"))
+    s.add_argument("--prune", action="store_true", help=_("also remove revoked accounts and roles (asks for confirmation)"))
+    s.add_argument("--dry-run", action="store_true", help=_("show the changes without writing anything"))
+    s.add_argument("--login", action="store_true", help=_("log in first if needed"))
+    s.add_argument("--yes", action="store_true", help=_("do not ask for confirmation when removing profiles"))
     s.set_defaults(func=cmd_refresh)
 
-    s = sub.add_parser("remove", help="remove an organization, an account (<org>-<account>) or a profile from this machine")
-    s.add_argument("targets", nargs="+", metavar="org|profile")
-    s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    s = sub.add_parser("remove", help=_("remove an organization, an account (<org>-<account>) or a profile from this machine"))
+    s.add_argument("targets", nargs="+", metavar="org|account|profile",
+                   help=_("what to remove: an organization, an account (<org>-<account>) or a profile"))
+    s.add_argument("--dry-run", action="store_true", help=_("show the changes without writing anything"))
+    s.add_argument("--yes", action="store_true", help=_("do not ask for confirmation"))
     s.set_defaults(func=cmd_remove)
 
-    s = sub.add_parser("uninstall", help="remove everything rolehop set up on this machine (profiles, agents, shell, state)")
-    s.add_argument("--purge", action="store_true", help="also delete orgs.toml and the legacy awsorg configuration")
-    s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    s = sub.add_parser("uninstall", help=_("remove everything set up on this machine (profiles, agents, shell, state)"))
+    s.add_argument("--purge", action="store_true", help=_("also delete orgs.toml and the legacy awsorg configuration"))
+    s.add_argument("--dry-run", action="store_true", help=_("show the changes without writing anything"))
+    s.add_argument("--yes", action="store_true", help=_("do not ask for confirmation"))
     s.set_defaults(func=cmd_uninstall)

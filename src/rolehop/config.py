@@ -10,7 +10,8 @@ import shutil
 import tomllib
 from pathlib import Path
 
-from rolehop import errors, paths
+from rolehop import errors, paths, ui
+from rolehop.i18n import _
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # Values written to ~/.aws/config: no whitespace, newlines, brackets or comment characters.
@@ -20,31 +21,44 @@ REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
 ARN_RE = re.compile(r"^arn:aws[\w-]*:iam::\d{12}:role/[\w+=,.@/-]+$")
 
 
+class FixableError(errors.ConfigError):
+    """A ConfigError that knows the user's next step; `rolehop` prints `fix` on its own line after the error."""
+
+    def __init__(self, message: str, fix: str = "") -> None:
+        super().__init__(message)
+        self.fix = fix
+
+
 def load_orgs(path: Path | None = None) -> list[dict]:
     """Load and validate orgs.toml (default: the configured path), filling in defaults. Raise ConfigError on any problem."""
     path = path or paths.CONFIG_PATH
+    shown = ui.short(path)
     if not path.exists():
-        raise errors.ConfigError(f"{path} not found. Copy orgs.example.toml there and edit it.")
+        raise FixableError(_("{path} not found.", path=shown), _("run: {cmd}", cmd="rolehop init"))
+
+    def bad(message: str) -> FixableError:
+        return FixableError(message, _("fix {path}, then run the command again", path=shown))
+
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise errors.ConfigError(f"{path} is not valid TOML: {exc}") from None
+        raise bad(_("{path} is not valid TOML: {error}", path=shown, error=exc)) from None
     orgs = data.get("org", [])
     if not orgs:
-        raise errors.ConfigError(f"{path} does not define any [[org]].")
+        raise bad(_("{path} does not define any [[org]].", path=shown))
     seen = set()
     for org in orgs:
         if not isinstance(org, dict):
-            raise errors.ConfigError("Each [[org]] must be a table.")
+            raise bad(_("Each [[org]] must be a table."))
         for key in ("name", "start_url", "sso_region"):
             if not isinstance(org.get(key), str) or not org.get(key):
-                raise errors.ConfigError(f"An org is missing '{key}' (a quoted string).")
+                raise bad(_("An organization is missing '{key}' (a quoted string).", key=key))
         name = org["name"]
         if not NAME_RE.match(name):
-            raise errors.ConfigError(f"Invalid org name: {name!r} (use lowercase letters, digits, - or _).")
+            raise bad(_("Invalid organization name: {name} (use lowercase letters, digits, - or _).", name=repr(name)))
         if name in seen:
-            raise errors.ConfigError(f"Duplicate org: {name}")
+            raise bad(_("Duplicate organization: {name}", name=name))
         seen.add(name)
         org.setdefault("region", org["sso_region"])
         org.setdefault("login_flow", "device")
@@ -53,61 +67,68 @@ def load_orgs(path: Path | None = None) -> list[dict]:
         org.setdefault("accounts", [])
         org.setdefault("assume_roles", [])
         if not URL_RE.match(org["start_url"]):
-            raise errors.ConfigError(f"[{name}] invalid start_url: {org['start_url']!r} (expected https://<name>.awsapps.com/start)")
+            raise bad(_("[{org}] invalid start_url: {value} (expected https://<name>.awsapps.com/start)",
+                        org=name, value=repr(org["start_url"])))
         for key in ("sso_region", "region"):
             if not isinstance(org[key], str) or not REGION_RE.match(org[key]):
-                raise errors.ConfigError(f"[{name}] invalid {key}: {org[key]!r} (e.g. us-east-1)")
+                raise bad(_("[{org}] invalid {key}: {value} (e.g. us-east-1)", org=name, key=key, value=repr(org[key])))
         if org["login_flow"] not in ("device", "pkce"):
-            raise errors.ConfigError(f"[{name}] login_flow must be \"device\" or \"pkce\".")
+            raise bad(_('[{org}] login_flow must be "device" or "pkce".', org=name))
         if not isinstance(org["portal_session_hours"], (int, float)) or org["portal_session_hours"] <= 0:
-            raise errors.ConfigError(f"[{name}] portal_session_hours must be a number of hours.")
+            raise bad(_("[{org}] portal_session_hours must be a number of hours.", org=name))
         if not isinstance(org["roles"], dict):
-            raise errors.ConfigError(f"[{name}] [org.roles] must be a table (alias = \"PermissionSet\").")
+            raise bad(_('[{org}] [org.roles] must be a table (alias = "PermissionSet").', org=name))
         for alias, ps in org["roles"].items():
             if not NAME_RE.match(alias) or not isinstance(ps, str) or not VAL_RE.match(ps):
-                raise errors.ConfigError(f"[{name}] invalid role in [org.roles]: {alias} = {ps!r}")
+                raise bad(_("[{org}] invalid role in [org.roles]: {alias} = {value}", org=name, alias=alias, value=repr(ps)))
         if not isinstance(org["accounts"], list) or not isinstance(org["assume_roles"], list):
-            raise errors.ConfigError(f"[{name}] accounts and assume_roles must be arrays of tables.")
+            raise bad(_("[{org}] accounts and assume_roles must be arrays of tables.", org=name))
         for acc in org["accounts"]:
             if not isinstance(acc, dict) or not acc.get("name") or not acc.get("id"):
-                raise errors.ConfigError(f"[{name}] each account needs 'name' and 'id'.")
+                raise bad(_("[{org}] each account needs 'name' and 'id'.", org=name))
             if not isinstance(acc["name"], str) or not NAME_RE.match(acc["name"]):
-                raise errors.ConfigError(f"[{name}] invalid account name: {acc['name']!r} "
-                                  "(a string of lowercase letters, digits, - or _)")
+                raise bad(_("[{org}] invalid account name: {value} (a string of lowercase letters, digits, - or _)",
+                            org=name, value=repr(acc["name"])))
             if not re.fullmatch(r"\d{12}", str(acc["id"])):
-                raise errors.ConfigError(f"[{name}] invalid account id for {acc['name']}: {acc['id']!r} (must be 12 digits)")
+                raise bad(_("[{org}] invalid account id for {account}: {value} (must be 12 digits)",
+                            org=name, account=acc["name"], value=repr(acc["id"])))
             acc["id"] = str(acc["id"])
             if not isinstance(acc.get("roles"), list) or not acc["roles"]:
-                raise errors.ConfigError(f"[{name}] roles for account {acc['name']} must be a list, e.g. [\"admin\"].")
+                raise bad(_('[{org}] roles for account {account} must be a list, e.g. ["admin"].',
+                            org=name, account=acc["name"]))
             for role in acc["roles"]:
                 if not isinstance(role, str) or not VAL_RE.match(role):
-                    raise errors.ConfigError(f"[{name}] invalid role in account {acc['name']}: {role!r}")
+                    raise bad(_("[{org}] invalid role in account {account}: {value}",
+                                org=name, account=acc["name"], value=repr(role)))
             if "region" in acc and (not isinstance(acc["region"], str) or not REGION_RE.match(acc["region"])):
-                raise errors.ConfigError(f"[{name}] invalid region in account {acc['name']}: {acc['region']!r}")
-        sources = {f"{a['name']}-{k}" for a in org["accounts"] for k, _ in role_pairs(org, a)}
+                raise bad(_("[{org}] invalid region in account {account}: {value}",
+                            org=name, account=acc["name"], value=repr(acc["region"])))
+        sources = {f"{a['name']}-{k}" for a in org["accounts"] for k, _r in role_pairs(org, a)}
         for ar in org["assume_roles"]:
             for k in ("name", "role_arn", "source"):
                 if not isinstance(ar, dict) or not isinstance(ar.get(k), str) or not ar.get(k):
-                    raise errors.ConfigError(f"[{name}] each [[org.assume_roles]] needs '{k}'.")
+                    raise bad(_("[{org}] each [[org.assume_roles]] needs '{key}'.", org=name, key=k))
             if not NAME_RE.match(ar["name"]):
-                raise errors.ConfigError(f"[{name}] invalid name in assume_roles: {ar['name']!r}")
+                raise bad(_("[{org}] invalid name in assume_roles: {value}", org=name, value=repr(ar["name"])))
             if not ARN_RE.match(ar["role_arn"]):
-                raise errors.ConfigError(f"[{name}] invalid role_arn: {ar['role_arn']!r}")
+                raise bad(_("[{org}] invalid role_arn: {value}", org=name, value=repr(ar["role_arn"])))
             if ar["source"] not in sources:
-                raise errors.ConfigError(f"[{name}] unknown source in assume_roles: {ar['source']!r} "
-                                  f"(valid: {', '.join(sorted(sources))})")
+                raise bad(_("[{org}] unknown source in assume_roles: {value} (valid: {valid})",
+                            org=name, value=repr(ar["source"]), valid=", ".join(sorted(sources))))
             if "external_id" in ar and (not isinstance(ar["external_id"], str) or not VAL_RE.match(ar["external_id"])):
-                raise errors.ConfigError(f"[{name}] invalid external_id in assume_roles {ar['name']}")
+                raise bad(_("[{org}] invalid external_id in assume_roles {name}", org=name, name=ar["name"]))
             if "duration_seconds" in ar and not isinstance(ar["duration_seconds"], int):
-                raise errors.ConfigError(f"[{name}] duration_seconds must be an integer")
+                raise bad(_("[{org}] duration_seconds must be an integer", org=name))
     for org in orgs:
         pp = org.get("probe_profile")
         if pp and pp not in {r["profile"] for r in catalog([org])}:
-            raise errors.ConfigError(f"[{org['name']}] probe_profile {pp!r} is not one of this org's profiles.")
+            raise bad(_("[{org}] probe_profile {value} is not one of this organization's profiles.",
+                        org=org["name"], value=repr(pp)))
     from collections import Counter
     dups = sorted(p for p, c in Counter(r["profile"] for r in catalog(orgs)).items() if c > 1)
     if dups:
-        raise errors.ConfigError(f"Duplicate profiles: {', '.join(dups)}. Check orgs.toml for repeated accounts or roles.")
+        raise bad(_("Duplicate profiles: {profiles}. Check orgs.toml for repeated accounts or roles.",
+                    profiles=", ".join(dups)))
     return orgs
 
 
@@ -156,7 +177,7 @@ def probe_profile(org: dict) -> str | None:
     default = org.get("default_role")
     if default:
         for acc in org["accounts"]:
-            if default in [k for k, _ in role_pairs(org, acc)]:
+            if default in [k for k, _ps in role_pairs(org, acc)]:
                 return f"{org['name']}-{acc['name']}-{default}"
     for acc in org["accounts"]:
         pairs = role_pairs(org, acc)
@@ -172,7 +193,8 @@ def select(orgs: list[dict], names: list[str]) -> list[dict]:
     by = {o["name"]: o for o in orgs}
     missing = [n for n in names if n not in by]
     if missing:
-        raise errors.ConfigError(f"Unknown org: {', '.join(missing)}. Available: {', '.join(by)}")
+        raise errors.ConfigError(_("Unknown organization: {names}. Available: {available}.",
+                                   names=", ".join(missing), available=", ".join(by)))
     return [by[n] for n in names]
 
 
@@ -236,12 +258,12 @@ def write_orgs(orgs: list[dict]) -> None:
     if paths.CONFIG_PATH.exists():
         backup = paths.CONFIG_PATH.with_name(f"{paths.CONFIG_PATH.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(paths.CONFIG_PATH, backup)
-        print(f"  ✓ Backup: {backup}")
+        ui.echo("  ✓ " + _("Backup: {path}", path=ui.short(backup)))
     tmp = paths.CONFIG_PATH.with_name(paths.CONFIG_PATH.name + ".tmp")
     tmp.write_text(text)
     os.chmod(tmp, 0o600)
     tmp.replace(paths.CONFIG_PATH)
-    print(f"  ✓ Saved {paths.CONFIG_PATH}")
+    ui.echo("  ✓ " + _("Saved {path}", path=ui.short(paths.CONFIG_PATH)))
 
 
 def alias_for(ps: str, roles_map: dict) -> str:

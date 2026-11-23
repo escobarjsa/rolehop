@@ -31,6 +31,7 @@ def no_agents(monkeypatch):
 # --------------------------------------------------------------------------- session.check_org
 def test_check_org_ok_with_estimate(sample, monkeypatch):
     cli_, p = sample
+    assert cli_.main(["sync", "--quiet"]) == 0
     calls = []
     monkeypatch.setattr(session.subprocess, "run",
                         lambda cmd, **kw: calls.append(cmd) or completed(0, json.dumps({"Account": "111", "Arn": "arn:x"})))
@@ -48,7 +49,8 @@ def test_check_org_ok_with_estimate(sample, monkeypatch):
     (subprocess.TimeoutExpired("aws", 30), "timed out"),
 ])
 def test_check_org_failures(sample, monkeypatch, behaviour, expected):
-    _, _ = sample
+    cli_, _ = sample
+    assert cli_.main(["sync", "--quiet"]) == 0
 
     def fake(cmd, **kw):
         if isinstance(behaviour, BaseException):
@@ -62,6 +64,7 @@ def test_check_org_failures(sample, monkeypatch, behaviour, expected):
 
 
 def test_check_org_blocked_state_overrides_cached_credentials(sample, monkeypatch):
+    assert sample[0].main(["sync", "--quiet"]) == 0
     monkeypatch.setattr(session.subprocess, "run", lambda cmd, **kw: completed(0, json.dumps({"Account": "1"})))
     session.write_state("acme", blocked=True)
     r = session.check_org(config.load_orgs()[0])
@@ -74,7 +77,7 @@ def test_check_org_without_profiles():
 
 
 def test_fmt_left_and_org_of_profile(sample):
-    assert session.fmt_left(None) == "no login data" and session.fmt_left(125) == "~2h05m estimated"
+    assert session.fmt_left(None) == "time left unknown" and session.fmt_left(125) == "~2h05m left (estimated)"
     assert session.org_of_profile("acme-prod-admin") == "acme" and session.org_of_profile("nope") is None
 
 
@@ -84,12 +87,13 @@ def test_status_text_and_json(sample, monkeypatch, capsys):
     monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": True, "account": "111",
                                                             "probe_profile": "acme-devsecops-admin", "estimated_left_min": 90})
     assert cli_.main(["status"]) == 0
-    assert "active session · account 111 · ~1h30m estimated" in capsys.readouterr().out
+    assert "active · ~1h30m left (estimated) · account 111" in capsys.readouterr().out
     assert cli_.main(["status", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)[0]["account"] == "111"
     monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": False, "expired": True, "error": "x"})
     assert cli_.main(["status"]) == 1
-    assert "no session · run: rolehop login acme" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "session expired" in out and "→ run: rolehop login acme" in out
 
 
 def test_login_only_where_needed(sample, monkeypatch, capsys):
@@ -249,7 +253,7 @@ def test_runner_paths(sample, monkeypatch, capsys):
     assert runner.run([], "1h", False, True, []) == 0
     monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "estimated_left_min": 60})
     assert runner.run([], "2h", True, False, []) == 75
-    assert "Use at most --max" in capsys.readouterr().out
+    assert "split the work, or run: rolehop run --max 0h45m" in capsys.readouterr().out
 
 
 def test_runner_runs_the_command_and_reports_blocked_orgs(sample, monkeypatch, capsys):
@@ -299,14 +303,25 @@ def test_doctor_reports_and_fixes(sample, no_agents, monkeypatch, capsys):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
     assert cli_.main(["doctor"]) == 0
     out = capsys.readouterr().out
-    assert "✓ aws-cli          2.30.1" in out and "out of date" in out and "run: rolehop sync" in out
-    assert "AWS_ACCESS_KEY_ID" in out and "run: rolehop login acme" in out and "no AI coding agents detected" in out
+    assert "aws-cli" in out and "2.30.1" in out and "out of date" in out and "→ run: rolehop sync" in out
+    assert "AWS_ACCESS_KEY_ID" in out and "no AI coding agents detected" in out
+    assert "session:" not in out  # no cascade of session warnings while the profiles are not written
     assert "AKIAEXAMPLE" not in out  # never echo secrets
     assert cli_.main(["sync", "--quiet"]) == 0
     capsys.readouterr()
+    assert cli_.main(["doctor"]) == 0
+    assert "→ run: rolehop login acme" in capsys.readouterr().out
     assert cli_.main(["doctor", "--json"]) == 0
     checks = {c["name"]: c for c in json.loads(capsys.readouterr().out)}
     assert checks["aws-config"]["status"] == "ok" and checks["orgs.toml"]["status"] == "ok"
+
+
+def test_doctor_json_is_english_whatever_the_language(sample, no_agents, monkeypatch, capsys):
+    cli_, _ = sample
+    monkeypatch.setattr(doctor, "aws_cli_version", lambda: (2, 30, 1))
+    assert cli_.main(["--lang", "es", "doctor", "--json"]) == 0
+    details = " ".join(c["detail"] + c["fix"] for c in json.loads(capsys.readouterr().out))
+    assert "out of date" in details and "desactualizado" not in details and "ejecuta" not in details
 
 
 def test_doctor_errors(env, no_agents, monkeypatch, capsys):
@@ -314,7 +329,7 @@ def test_doctor_errors(env, no_agents, monkeypatch, capsys):
     monkeypatch.setattr(doctor, "aws_cli_version", lambda: None)
     assert cli_.main(["doctor"]) == 1  # no aws, no orgs.toml
     out = capsys.readouterr().out
-    assert "✗ aws-cli" in out and "✗ orgs.toml" in out and "rolehop init" in out
+    assert "✗ aws-cli" in out and "✗ orgs.toml" in out and "rolehop setup" in out
     monkeypatch.setattr(doctor, "aws_cli_version", lambda: (2, 10, 0))
     p.orgs.write_text(SAMPLE)
     p.aws.write_text("[profile acme-prod-admin]\nregion = eu-west-1\n")
@@ -325,13 +340,14 @@ def test_doctor_errors(env, no_agents, monkeypatch, capsys):
 
 def test_doctor_online(sample, no_agents, monkeypatch, capsys):
     cli_, _ = sample
+    assert cli_.main(["sync", "--quiet"]) == 0
     from rolehop import upgrade
     monkeypatch.setattr(doctor, "aws_cli_version", lambda: (2, 30, 0))
     monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "estimated_left_min": 30})
     monkeypatch.setattr(upgrade, "latest_release", lambda: {"version": "99.0.0"})
     assert cli_.main(["doctor", "--online"]) == 0
     out = capsys.readouterr().out
-    assert "active · ~0h30m estimated" in out and "99.0.0 is available" in out
+    assert "active · ~0h30m left (estimated)" in out and "99.0.0 is available" in out
 
 
 def test_aws_cli_version_parsing(monkeypatch):
@@ -391,3 +407,233 @@ def test_awslogin_is_a_shortcut_for_rolehop_login(monkeypatch):
     monkeypatch.setattr("sys.argv", ["awslogin", "acme", "--force"])
     assert cli.awslogin_main() == 0
     assert seen == [["login", "acme", "--force"]]
+
+
+# --------------------------------------------------------------------------- clearer status, languages, color
+def test_status_says_run_sync_when_profiles_are_missing(sample, monkeypatch, capsys):
+    """orgs.toml has the org but ~/.aws/config does not: tell the user to sync instead of a raw AWS error."""
+    cli_, p = sample
+    monkeypatch.setattr(session.subprocess, "run", lambda *a, **kw: pytest.fail("must not call AWS"))
+    assert cli_.main(["status"]) == 1
+    out = capsys.readouterr().out
+    assert "profiles are not in" in out and "→ run: rolehop sync" in out
+    r = session.check_org(config.load_orgs()[0])
+    assert r["needs_sync"] and not r["ok"]
+
+
+def test_status_aligns_names_and_summarizes(sample, monkeypatch, capsys):
+    cli_, p = sample
+    p.orgs.write_text(SAMPLE + """
+[[org]]
+name = "a-much-longer-org"
+start_url = "https://x.awsapps.com/start"
+sso_region = "us-east-1"
+[org.roles]
+admin = "Administrator"
+[[org.accounts]]
+name = "main"
+id = "999999999999"
+roles = ["admin"]
+""")
+    monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": org["name"] == "acme",
+                                                            "account": "1", "estimated_left_min": 60, "expired": True})
+    assert cli_.main(["status"]) == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].index("active") == lines[1].index("session expired")  # aligned detail column
+    assert lines[2].strip() == "→ run: rolehop login a-much-longer-org"
+    assert lines[-1] == "1 of 2 organizations ready."
+
+
+def test_language_command_and_precedence(sample, monkeypatch, capsys):
+    from rolehop import i18n
+    cli_, p = sample
+    for var in ("ROLEHOP_LANG", "LC_ALL", "LC_MESSAGES"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("LANG", "pt_BR.UTF-8")
+    assert i18n.resolve() == ("pt", "system")
+    assert cli_.main(["language", "es"]) == 0
+    assert "Idioma" in capsys.readouterr().out or i18n.resolve() == ("es", "settings")
+    assert i18n.resolve() == ("es", "settings") and 'language = "es"' in paths.SETTINGS_PATH.read_text()
+    monkeypatch.setenv("ROLEHOP_LANG", "en")
+    assert i18n.resolve() == ("en", "env")
+    i18n.set_language("pt")
+    assert i18n.resolve() == ("pt", "flag")
+    i18n.set_language(None)
+    monkeypatch.delenv("ROLEHOP_LANG")
+    assert cli_.main(["language", "auto"]) == 0 and i18n.resolve() == ("pt", "system")
+    assert cli_.main(["language"]) == 0 and "pt" in capsys.readouterr().out
+
+
+def test_lang_flag_translates_output_and_help(sample, monkeypatch, capsys):
+    from rolehop import i18n
+    cli_, p = sample
+    monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": False, "needs_sync": True})
+    assert cli_.main(["--lang", "es", "status"]) == 1
+    out = capsys.readouterr().out
+    assert "ejecuta: rolehop sync" in out
+    with pytest.raises(SystemExit):
+        cli_.main(["--lang", "pt", "--help"])
+    assert "opções" in capsys.readouterr().out
+    i18n.set_language(None)
+
+
+def test_translations_never_crash_and_fall_back(monkeypatch):
+    from rolehop import i18n
+    monkeypatch.setattr(i18n, "catalog", lambda lang: {"Hello {name}": "Hola {nombre_mal}"})
+    i18n.set_language("es")
+    assert i18n._("Hello {name}", name="Ana") == "Hello Ana"   # broken placeholder -> English
+    assert i18n._("Untranslated {x}", x=1) == "Untranslated 1"
+    i18n.set_language(None)
+    assert i18n.normalize("es_CO.UTF-8") == "es" and i18n.normalize("pt-BR") == "pt" and i18n.normalize("fr_FR") is None
+
+
+def test_color_rules(monkeypatch, capsys):
+    import io
+    tty = io.StringIO()
+    tty.isatty = lambda: True  # type: ignore[method-assign]
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm")
+    assert ui.color_enabled(tty) and not ui.color_enabled(io.StringIO())
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert not ui.color_enabled(tty)
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setenv("TERM", "dumb")
+    assert not ui.color_enabled(tty)
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    assert ui.color_enabled(io.StringIO())
+    monkeypatch.delenv("FORCE_COLOR")
+    ui.echo("✓ done")
+    assert capsys.readouterr().out == "✓ done\n"  # no escape codes when not a terminal
+
+
+# --------------------------------------------------------------------------- review follow-ups
+@pytest.mark.parametrize("stderr, code", [
+    ("The config profile (acme-x) could not be found", "needs_sync"),
+    ("Error loading SSO Token: Token for acme does not exist", "not_signed_in"),
+    ("Error when retrieving token from sso: Token has expired and refresh failed", "expired"),
+    ("An error occurred (ForbiddenException) when calling the GetRoleCredentials operation: No access", "forbidden"),
+    ("Could not connect to the endpoint URL: \"https://sts.amazonaws.com/\"", "network"),
+    ("Something else entirely", "aws_error"),
+])
+def test_classify_aws_errors(stderr, code):
+    assert session.classify(stderr) == code
+
+
+def test_status_groups_shared_fixes_and_sends_revoked_roles_to_refresh(sample, monkeypatch, capsys):
+    cli_, p = sample
+    p.orgs.write_text(SAMPLE + "\n".join(f'''
+[[org]]
+name = "{n}"
+start_url = "https://{n}.awsapps.com/start"
+sso_region = "us-east-1"
+[org.roles]
+admin = "Administrator"
+[[org.accounts]]
+name = "main"
+id = "99999999999{i}"
+roles = ["admin"]''' for i, n in enumerate(["beta", "gamma"])))
+    codes = {"acme": "forbidden", "beta": "expired", "gamma": "not_signed_in"}
+    monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": False, "code": codes[org["name"]],
+                                                            "probe_profile": f"{org['name']}-main-admin"})
+    assert cli_.main(["status"]) == 1
+    out = capsys.readouterr().out
+    assert "→ run: rolehop refresh acme" in out          # revoked role -> refresh, not login
+    assert out.count("rolehop login") == 1 and "→ run: rolehop login\n" in out  # one shared fix for beta and gamma
+    assert "! beta" in out and "! gamma" in out and "✗ acme" in out  # yellow for "act", red for broken
+
+
+def test_status_json_keeps_a_stable_shape(sample, capsys):
+    cli_, _ = sample
+    assert cli_.main(["status", "--json"]) == 1
+    r = json.loads(capsys.readouterr().out)[0]
+    assert {"org", "ok", "code", "expired", "needs_sync", "blocked", "probe_profile", "error"} <= set(r)
+    assert r["code"] == "needs_sync" and "/" not in r["error"].replace("~/.aws/config", "")
+
+
+def test_settings_are_preserved_or_refused(sample, monkeypatch, capsys):
+    from rolehop import i18n
+    cli_, _ = sample
+    paths.SETTINGS_PATH.write_text('theme = "dark"\nwidth = 3\nratio = 1.5\nnote = "ñandú 😀"\n')
+    assert cli_.main(["language", "pt"]) == 0
+    data = i18n.read_settings()
+    assert data == {"theme": "dark", "width": 3, "ratio": 1.5, "note": "ñandú 😀", "language": "pt"}
+    paths.SETTINGS_PATH.write_text("[ui]\ncolor = false\n")
+    before = paths.SETTINGS_PATH.read_text()
+    assert cli_.main(["language", "es"]) == 1
+    assert paths.SETTINGS_PATH.read_text() == before and "Could not save the language" in capsys.readouterr().err
+    paths.SETTINGS_PATH.write_text("not = = toml")
+    assert cli_.main(["language", "es"]) == 1 and paths.SETTINGS_PATH.read_text() == "not = = toml"
+
+
+def test_language_confirms_saved_value_and_names_the_override(sample, monkeypatch, capsys):
+    cli_, _ = sample
+    monkeypatch.setenv("ROLEHOP_LANG", "es")
+    assert cli_.main(["language", "pt"]) == 0
+    out = capsys.readouterr().out
+    assert "Idioma guardado: Português (pt)." in out          # confirms what was saved, in the effective language
+    assert "ROLEHOP_LANG tiene prioridad" in out and "unset ROLEHOP_LANG" in out
+
+
+def test_corrupt_catalog_falls_back_to_english(monkeypatch, tmp_path):
+    from rolehop import i18n
+    folder = tmp_path / "locales" / "es"
+    folder.mkdir(parents=True)
+    (folder / "broken.json").write_text("{not json")
+    (folder / "odd.json").write_text(json.dumps({"session expired": ["not", "a", "string"], "ok": "bien"}))
+
+    class Files:
+        def joinpath(self, *parts):
+            return tmp_path.joinpath(*parts)
+
+    monkeypatch.setattr(i18n.resources, "files", lambda pkg: Files())
+    i18n.catalog.cache_clear()
+    try:
+        assert i18n.catalog("es") == {"ok": "bien"}
+        i18n.set_language("es")
+        assert i18n._("session expired") == "session expired"
+    finally:
+        i18n.catalog.cache_clear()
+        i18n.set_language(None)
+
+
+def test_lang_works_after_the_subcommand_and_not_after_double_dash(sample, monkeypatch, capsys):
+    cli_, _ = sample
+    assert cli_.main(["status", "--lang", "es"]) == 1
+    assert "ejecuta: rolehop sync" in capsys.readouterr().out
+    assert cli._preparse_lang(["run", "--", "tool", "--lang", "pt"]) is None
+    with pytest.raises(SystemExit):
+        cli_.main(["--lan", "es", "list"])  # abbreviations are rejected instead of silently ignored
+    capsys.readouterr()
+
+
+def test_unknown_command_suggests_and_hides_internal_ones(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["stauts"])
+    err = capsys.readouterr().err
+    assert "unknown command: stauts" in err and "Did you mean: rolehop status?" in err
+    assert "_complete" not in err and "_which-org" not in err
+
+
+def test_missing_config_prints_the_fix_on_stderr(env, capsys):
+    cli_, _ = env
+    assert cli_.main(["list"]) == 2
+    err = capsys.readouterr().err
+    assert "not found" in err and "→ run: rolehop init" in err
+
+
+def test_purge_removes_settings(sample, capsys):
+    cli_, _ = sample
+    assert cli_.main(["language", "es"]) == 0 and paths.SETTINGS_PATH.exists()
+    assert cli_.main(["uninstall", "--yes", "--purge"]) == 0
+    assert not paths.SETTINGS_PATH.exists()
+
+
+def test_ascii_terminal_does_not_crash(sample, tmp_path):
+    import os
+    import sys
+    cli_, p = sample
+    env = {**os.environ, "PYTHONIOENCODING": "ascii", "ROLEHOP_LANG": "es"}
+    out = subprocess.run([sys.executable, "-m", "rolehop", "status"], capture_output=True, text=True, env=env,
+                         encoding="ascii", errors="replace")
+    assert out.returncode == 1 and "Traceback" not in out.stderr and "rolehop sync" in out.stdout

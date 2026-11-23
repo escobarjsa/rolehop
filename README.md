@@ -29,6 +29,7 @@ With `rolehop`, one `rolehop login` per organization unlocks every account and r
 - **AI agent integration** - rules and hooks so agents choose profiles freely, never read credentials, and stop to ask for `rolehop login` on expiry.
 - **Unattended runs** - `rolehop run --login --max 6h` checks the session covers the job before you walk away.
 - **Safe writes** - validated input, managed blocks only, atomic writes, backups, `0600`. Never writes tokens or keys.
+- **Your language** - messages in English, Spanish or Portuguese (`rolehop language es`); clear output with the fix for every problem.
 - **Zero dependencies** - Python standard library only.
 
 ## Install
@@ -43,7 +44,7 @@ rolehop setup
 Before the PyPI release, install from GitHub - the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
-uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.7.0/rolehop-1.7.0-py3-none-any.whl
+uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.8.0/rolehop-1.8.0-py3-none-any.whl
 uv tool install git+https://github.com/escobarjsa/rolehop
 ```
 

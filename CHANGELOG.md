@@ -3,6 +3,21 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-11-23
+
+### Added
+- **Languages:** every message, prompt, error and `--help` text is available in English, Spanish and Portuguese. Choose with `rolehop language es|pt|en|auto` (saved in `~/.config/rolehop/settings.toml`), `ROLEHOP_LANG`, or `--lang` for one run; otherwise the system locale is used. `--json` output, agent rules and hook instructions stay in English on purpose.
+- `--no-color` (and `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb` support); `sync --diff`.
+- Unknown commands get a suggestion (`Did you mean: rolehop status?`).
+
+### Changed
+- **Clearer output** following clig.dev: every problem is followed by the exact command that fixes it (`→ run: rolehop sync`), aligned columns, paths shown with `~`, a single shared fix when several organizations need the same command, colors only in a terminal (green done, yellow action needed, red failed), dry runs end with the command to apply them, and technical details moved to `--verbose`.
+- `rolehop status` now detects organizations whose profiles were never written to `~/.aws/config` and asks for `rolehop sync` instead of showing the raw AWS error. It also tells apart "not signed in", "session expired", a revoked role (`→ run: rolehop refresh <org>`) and network problems.
+- `status --json` results always have the same keys and a new stable `code` field; `doctor --json` is always English; `sync` prints a summary by default (the full diff with `--dry-run` or `--diff`).
+- Global options (`--lang`, `--no-color`, `-v`) also work after the subcommand; option abbreviations are rejected.
+- `run` failures go to stderr and suggest `rolehop run --login --max <duration>`; `uninstall` lists only what is actually installed and `--purge` also removes `settings.toml`.
+- In `agent list --json`, Kiro's name is now just "Kiro".
+
 ## [1.7.0] - 2026-11-16
 
 ### Changed
@@ -79,6 +94,7 @@ First release as a Python package (as `awsorg`).
 ### Inherited from the script versions (1.0-1.1)
 - Declarative `sso-session` profiles for any number of organizations, `init` wizard with discovery through the AWS access portal API (standard library), `discover`, `status`, `login`, full validation, atomic writes, symlink support and backups.
 
+[1.8.0]: https://github.com/escobarjsa/rolehop/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/escobarjsa/rolehop/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/escobarjsa/rolehop/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/escobarjsa/rolehop/compare/v1.4.0...v1.5.0

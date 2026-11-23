@@ -8,6 +8,7 @@ import re
 import shutil
 
 from rolehop import config, errors, paths, ui
+from rolehop.i18n import _
 
 MARK_NAMES = f"(?:rolehop|{paths.LEGACY_NAME})"  # block marker names accepted when reading ~/.aws/config
 
@@ -61,18 +62,21 @@ def split_blocks(text: str) -> tuple[str, dict[str, str]]:
 
     def repl(m: re.Match) -> str:
         if m["org"] in blocks:
-            raise errors.ConfigError(f"Block rolehop:{m['org']} appears twice in {paths.AWS_CONFIG}. "
-                              f"Keep only one (back up the file first) and try again.")
+            raise errors.ConfigError(_("Block rolehop:{org} appears twice in {path}. "
+                                       "Keep only one (back up the file first) and try again.",
+                                       org=m["org"], path=ui.short(paths.AWS_CONFIG)))
         blocks[m["org"]] = m.group(0).rstrip("\n")
         return f"\0ROLEHOP:{m['org']}\0\n"
 
     if "\0" in text:
-        raise errors.ConfigError(f"{paths.AWS_CONFIG} contains null bytes: check it or restore a .bak backup.")
+        raise errors.ConfigError(_("{path} contains null bytes: check it or restore a .bak backup.",
+                                   path=ui.short(paths.AWS_CONFIG)))
     free = pattern.sub(repl, text)
     leftover = re.findall(rf"^# (?:>>>|<<<) {MARK_NAMES}:([a-z0-9_-]+)", free, re.M)
     if leftover:
-        raise errors.ConfigError(f"Incomplete or tampered rolehop markers for: {', '.join(sorted(set(leftover)))} "
-                          f"in {paths.AWS_CONFIG}. Fix or remove that block by hand (back up the file first).")
+        raise errors.ConfigError(_("Incomplete or tampered block markers for {orgs} in {path}. "
+                                   "Fix or remove that block by hand (back up the file first).",
+                                   orgs=", ".join(sorted(set(leftover))), path=ui.short(paths.AWS_CONFIG)))
     return free, blocks
 
 
@@ -80,6 +84,15 @@ SECTION_RE = re.compile(r"^\[(?:profile\s+)?(?P<name>[^\]]+?)\]\s*$", re.M)
 
 
 SSO_SESSION_RE = re.compile(r"^\[sso-session\s+(?P<name>[^\]]+?)\]\s*$", re.M)
+
+
+def profile_exists(name: str) -> bool:
+    """True if ~/.aws/config defines ``[profile <name>]`` (or ``[default]`` for "default")."""
+    try:
+        text = paths.AWS_CONFIG.read_text()
+    except OSError:
+        return False
+    return any(m["name"].strip() == name for m in SECTION_RE.finditer(text) if not m.group(0).startswith("[sso-session"))
 
 
 def conflicts(free_text: str, org: dict) -> list[str]:
@@ -144,16 +157,17 @@ def plan_sync(orgs: list[dict], current: str, prune: bool = False,
             new_free = new_free.replace(token, blocks[name] + "\n", 1)
             kept.append(name)
     if "\0" in new_free:
-        raise errors.ConfigError("internal error: the result contains unresolved placeholders. Nothing was written.")
+        raise errors.ConfigError(_("internal error: the result contains unresolved placeholders. Nothing was written."))
     import configparser
     try:
         configparser.RawConfigParser(strict=True, interpolation=None).read_string(new_free)
     except configparser.Error as exc:
-        raise errors.ConfigError(f"the result would not be a valid ~/.aws/config; nothing was written: {exc}") from None
+        raise errors.ConfigError(_("the result would not be a valid {path}; nothing was written: {error}",
+                                   path=ui.short(paths.AWS_CONFIG), error=exc)) from None
     return new_free, kept, {}
 
 
-def write_aws_config(text: str) -> None:
+def write_aws_config(text: str, indent: str = "") -> None:
     """Write ~/.aws/config atomically (0600, fsync), with a backup, following symlinks."""
     target = paths.AWS_CONFIG.resolve() if paths.AWS_CONFIG.is_symlink() else paths.AWS_CONFIG
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -161,7 +175,7 @@ def write_aws_config(text: str) -> None:
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
         os.chmod(backup, 0o600)
-        print(f"\n✓ Backup: {backup}")
+        ui.echo(indent + "✓ " + _("Backup: {path}", path=ui.short(backup)))
     ui.debug(f"writing {target} atomically (mode 0600)")
     tmp = target.with_name(target.name + ".rolehop-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

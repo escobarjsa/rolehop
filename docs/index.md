@@ -46,6 +46,12 @@ description: Auto-refreshing AWS IAM Identity Center profiles for many organizat
 
     `rolehop init` asks for the portal URL, logs you in, and discovers your accounts and roles through the AWS access portal API.
 
+-   :lucide-languages:{ .lg .middle } **English, Spanish, Portuguese**
+
+    ---
+
+    Messages in your language (`rolehop language es`). Every problem comes with the exact command that fixes it.
+
 -   :lucide-package:{ .lg .middle } **Zero dependencies**
 
     ---

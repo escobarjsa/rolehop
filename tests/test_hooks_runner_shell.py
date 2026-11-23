@@ -71,16 +71,18 @@ def test_parse_minutes():
 
 def test_run_does_not_start_without_session(sample, capsys, monkeypatch):
     cli, _ = sample
-    monkeypatch.setattr(session, "check_org", lambda org: {"ok": False, "estimated_left_min": None})
+    monkeypatch.setattr(session, "check_org", lambda org: {"org": org["name"], "ok": False, "code": "not_signed_in"})
     assert runner.run([], "3h", False, False, []) == 75
-    assert "no session" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "not signed in" in captured.out
+    assert "Nothing was started" in captured.err and "→ run: rolehop run --login --max 3h" in captured.err
 
 
 def test_run_insufficient_and_sufficient_time(sample, capsys, monkeypatch):
     cli, _ = sample
     monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "estimated_left_min": 120})
     assert runner.run([], "3h", False, False, []) == 75
-    assert "--max 1h45m" in capsys.readouterr().out
+    assert "run: rolehop run --login --max 3h" in capsys.readouterr().out
     monkeypatch.setattr(session, "check_org", lambda org: {"ok": True, "estimated_left_min": 470})
     assert runner.run([], "6h", False, False, ["true"]) == 0
     assert runner.run([], "1h", False, False, ["false"]) == 1
@@ -95,7 +97,7 @@ def test_shellrc_idempotent(tmp_path, monkeypatch):
     text = (home / ".zshrc").read_text()
     assert text.startswith("# mine\n") and shellrc.MARK_BEGIN in text and ".local/bin" in text
     assert "direnv hook zsh" in text
-    assert any("backup" in m for m in msgs)
+    assert any("Backup" in m for m in msgs)
     again = shellrc.ensure_shell_integration(home=home, shell="zsh")
     assert (home / ".zshrc").read_text() == text and "already has" in again[0]
 
