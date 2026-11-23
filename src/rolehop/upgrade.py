@@ -113,7 +113,7 @@ def upgrade_command(source: str, tool: str | None) -> list[str] | None:
 
 
 def _retry_hint() -> None:
-    ui.echo("→ " + _("try again later, or download it from {url}", url=RELEASES_PAGE), err=True)
+    ui.fix(_("try again later, or download it from {url}", url=RELEASES_PAGE), indent=2, err=True)
 
 
 def cmd_upgrade(args) -> int:
@@ -147,10 +147,10 @@ def cmd_upgrade(args) -> int:
         cmd = upgrade_command(source, tool)
         if cmd is None:
             ui.echo("! " + _("Could not detect the installer (uv or pipx), so the upgrade cannot run automatically."))
-            ui.echo("→ " + _("run: {cmd}", cmd=f"uv tool install --force {source}"))
+            ui.fix(_("run: {cmd}", cmd=f"uv tool install --force {source}"), indent=2)
             return 0 if args.check else 1
-        ui.echo("→ " + _("run: {cmd}", cmd="rolehop upgrade"))
-        ui.hint("  " + _("It installs {name} after verifying its checksum.", name=rel["wheel_name"] or rel["tag"]))
+        ui.fix(_("run: {cmd}", cmd="rolehop upgrade"), indent=2)
+        ui.hint("    " + _("It installs {name} after verifying its checksum.", name=rel["wheel_name"] or rel["tag"]))
         return 0
     with tempfile.TemporaryDirectory(prefix="rolehop-upgrade-") as tmp:
         if rel["wheel"]:
@@ -158,8 +158,8 @@ def cmd_upgrade(args) -> int:
                 source = str(download_verified(rel, Path(tmp)))
             except VerificationError as exc:
                 ui.echo("✗ " + _("Not upgrading: {reason}.", reason=exc), err=True)
-                ui.echo("→ " + _("do not install this release by hand; report it at {url}",
-                                 url=f"https://github.com/{REPO}/issues"), err=True)
+                ui.fix(_("do not install this release by hand; report it at {url}",
+                         url=f"https://github.com/{REPO}/issues"), indent=2, err=True)
                 return 1
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 ui.echo("✗ " + _("Could not download the release: {error}", error=exc), err=True)
@@ -170,7 +170,7 @@ def cmd_upgrade(args) -> int:
         cmd = upgrade_command(source, tool)
         if cmd is None:
             ui.echo("✗ " + _("{tool} is not on PATH, so the upgrade cannot run automatically.", tool=tool), err=True)
-            ui.echo("→ " + _("run: {cmd}", cmd=f"uv tool install --force {rel['wheel'] or git_source}"), err=True)
+            ui.fix(_("run: {cmd}", cmd=f"uv tool install --force {rel['wheel'] or git_source}"), indent=2, err=True)
             return 1
         ui.echo(_("Running: {cmd}", cmd=" ".join(cmd)))
         rc = subprocess.run(cmd).returncode

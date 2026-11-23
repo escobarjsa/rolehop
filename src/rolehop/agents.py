@@ -18,8 +18,11 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from rolehop import ui
 from rolehop.i18n import _
 from rolehop.shellrc import find_any_block, find_block
+
+HINT = "\x00hint:"  # prefix of a Changes line that is a dim tip, not something to act on
 
 MD_BEGIN = "<!-- >>> rolehop (managed by rolehop, do not edit) >>> -->"
 MD_END = "<!-- <<< rolehop <<< -->"
@@ -57,7 +60,7 @@ class Agent:
 AGENTS: dict[str, Agent] = {a.key: a for a in [
     Agent("claude", "Claude Code", ("claude",), (".claude",), ".claude/rules/aws.md", "file", hooks="claude"),
     Agent("codex", "OpenAI Codex CLI", ("codex",), (".codex",), ".codex/AGENTS.md", hooks="codex"),
-    Agent("kiro", "Kiro (CLI and IDE)", ("kiro-cli", "kiro"), (".kiro",), ".kiro/steering/aws.md", "file",
+    Agent("kiro", "Kiro", ("kiro-cli", "kiro"), (".kiro",), ".kiro/steering/aws.md", "file",
           frontmatter="---\ninclusion: always\n---\n\n"),
     Agent("copilot", "GitHub Copilot CLI", ("copilot",), (".copilot",), ".copilot/copilot-instructions.md",
           hooks="copilot"),
@@ -72,13 +75,18 @@ AGENTS: dict[str, Agent] = {a.key: a for a in [
 ]}
 
 
+def tips(agent: Agent) -> list[str]:
+    """Background facts about an agent, shown dimmed: nothing to do (translated when shown, not at import)."""
+    if agent.key == "kiro":
+        return [_("Kiro: rules only (steering), no hooks. Kiro's post-command hooks do not reliably "
+                  "receive command output.")]
+    return []
+
+
 def notes(agent: Agent) -> list[str]:
     """Extra steps the user must take after installing for an agent (translated when shown, not at import)."""
     if agent.key == "codex":
         return [_("Codex: new hooks run only after you approve them. Open Codex and type /hooks.")]
-    if agent.key == "kiro":
-        return [_("Kiro: rules only (steering), no hooks. Kiro's post-command hooks do not reliably "
-                  "receive command output.")]
     if agent.key == "opencode":
         return [_("OpenCode: if ~/.config/opencode/AGENTS.md did not exist before, OpenCode stops reading "
                   "~/.claude/CLAUDE.md as a fallback. Copy anything you still need from CLAUDE.md into it.")]
@@ -109,15 +117,21 @@ class Changes:
     def __init__(self, dry_run: bool):
         self.dry_run = dry_run
         self.lines: list[str] = []
+        self.changed = False  # something was (or, in a dry run, would be) written or removed
         self._backed: set[Path] = set()
+
+    def hint(self, text: str) -> None:
+        self.lines.append(HINT + text)
 
     def write(self, path: Path, text: str, label: str) -> None:
         target = path.resolve() if path.is_symlink() else path
+        shown = ui.short(path)
         if target.exists() and target.read_text(encoding="utf-8") == text:
-            self.lines.append("✓ " + _("{label}: already up to date ({path})", label=label, path=path))
+            self.lines.append("✓ " + _("{label}: already up to date ({path})", label=label, path=shown))
             return
+        self.changed = True
         if self.dry_run:
-            self.lines.append("[dry-run] " + _("{label}: would write {path}", label=label, path=path))
+            self.lines.append(_("[dry-run]") + " " + _("{label}: would write {path}", label=label, path=shown))
             return
         target.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
@@ -129,20 +143,21 @@ class Changes:
         target.write_text(text, encoding="utf-8")
         if backup is not None:
             self.lines.append("✓ " + _("{label}: updated {path} (backup: {backup})",
-                                       label=label, path=path, backup=backup.name))
+                                       label=label, path=shown, backup=backup.name))
         elif existed:
-            self.lines.append("✓ " + _("{label}: updated {path}", label=label, path=path))
+            self.lines.append("✓ " + _("{label}: updated {path}", label=label, path=shown))
         else:
-            self.lines.append("✓ " + _("{label}: created {path}", label=label, path=path))
+            self.lines.append("✓ " + _("{label}: created {path}", label=label, path=shown))
 
     def remove(self, path: Path, label: str) -> None:
         if not path.exists():
             return
+        self.changed = True
         if self.dry_run:
-            self.lines.append("[dry-run] " + _("{label}: would remove {path}", label=label, path=path))
+            self.lines.append(_("[dry-run]") + " " + _("{label}: would remove {path}", label=label, path=ui.short(path)))
             return
         path.unlink()
-        self.lines.append("✓ " + _("{label}: removed {path}", label=label, path=path))
+        self.lines.append("✓ " + _("{label}: removed {path}", label=label, path=ui.short(path)))
 
 
 def _with_block(current: str, body: str) -> str:
@@ -256,7 +271,7 @@ def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     except ValueError as exc:
         ch.lines.append("✗ " + _("{agent}: {path} is not valid JSON ({error}). Hooks not installed. "
                                  "Fix the file, then run: rolehop agent install {key}",
-                                 agent=agent.name, path=path, error=exc, key=agent.key))
+                                 agent=agent.name, path=ui.short(path), error=exc, key=agent.key))
         return
     if fmt == "claude":
         _merge_nested_hooks(data, "PostToolUse", "Bash", _hook_cmd("claude"))
@@ -288,7 +303,7 @@ def uninstall_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     except ValueError as exc:
         ch.lines.append("✗ " + _("{agent}: {path} is not valid JSON ({error}). Hooks not removed. "
                                  "Fix the file, then run: rolehop agent uninstall {key}",
-                                 agent=agent.name, path=path, error=exc, key=agent.key))
+                                 agent=agent.name, path=ui.short(path), error=exc, key=agent.key))
         return
     if not data:
         return
@@ -316,6 +331,8 @@ def install(agent: Agent, home: Path, ch: Changes, with_hooks: bool = True) -> N
         install_hooks(agent, home, ch)
     for note in notes(agent):
         ch.lines.append(f"! {note}")
+    for tip in tips(agent):
+        ch.hint(tip)
 
 
 def uninstall(agent: Agent, home: Path, ch: Changes) -> None:
@@ -344,13 +361,41 @@ def status(agent: Agent, home: Path) -> dict:
             "rules": str(home / agent.rules_path) if agent.rules_path else "(UI)", "hooks": agent.hooks or "-"}
 
 
+def has_leftovers(agent: Agent, home: Path) -> bool:
+    """True if this agent has anything rolehop installed: rules, hooks or (Claude Code) deny rules."""
+    if status(agent, home)["installed"]:
+        return True
+    if not agent.hooks:
+        return False
+    path = _hooks_target(agent, home)
+    for candidate in ([path, path.with_name("awsorg.json")] if agent.hooks == "copilot" else [path]):
+        if not candidate.exists():
+            continue
+        if agent.hooks == "copilot":
+            return True
+        try:
+            data = _read_json(candidate)
+        except (ValueError, OSError):
+            return False
+        hooks = data.get("hooks")
+        groups = [g for gs in hooks.values() if isinstance(gs, list) for g in gs] if isinstance(hooks, dict) else []
+        commands = [str(h.get("command", "")) for g in groups if isinstance(g, dict)
+                    for h in g.get("hooks", []) if isinstance(h, dict)]
+        perms = data.get("permissions") if agent.hooks == "claude" else None
+        deny = perms.get("deny") if isinstance(perms, dict) else None
+        ours_denied = isinstance(deny, list) and bool(set(map(str, deny)) & set(CLAUDE_DENY + LEGACY_DENY))
+        if ours_denied or any(_is_ours(c) for c in commands):
+            return True
+    return False
+
+
 def resolve(names: list[str], use_all: bool, home: Path) -> list[Agent]:
     if use_all:
         return list(AGENTS.values())
     if names:
         unknown = [n for n in names if n not in AGENTS]
         if unknown:
-            raise KeyError(_("unknown agent: {names}. Available: {available}",
+            raise KeyError(_("Unknown agent: {names}. Available: {available}",
                              names=", ".join(unknown), available=", ".join(AGENTS)))
         return [AGENTS[n] for n in names]
     return [a for a in AGENTS.values() if a.detected(home)]

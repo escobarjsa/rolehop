@@ -6,7 +6,7 @@ by the AWS CLI and SDKs: rolehop never writes tokens or keys.
 Subcommands:
   setup                        all-in-one: PATH, wizard if no config, profiles and AI agents
   init                         wizard: organizations, account and role discovery, orgs.toml
-  sync [--dry-run] [--prune]   write the managed blocks to ~/.aws/config
+  sync [--dry-run|--diff] [--prune]  write the managed blocks to ~/.aws/config
   login [org ...] [--force]    run aws sso login only where needed (shortcut: awslogin)
   status [org ...] [--json]    session status per org
   list [--json] [--org ORG]    catalog of available profiles
@@ -31,6 +31,7 @@ import datetime as dt
 import difflib
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -44,38 +45,62 @@ from rolehop import awsconfig, config, errors, paths, portal, session, ui, wizar
 from rolehop.i18n import _  # noqa: E402
 
 
+def sync_summary(current: str, new: str, orgs: list[dict]) -> list[str]:
+    """One line per organization whose managed block changes ("+ acme: added · profiles: 3")."""
+    old_blocks, new_blocks = awsconfig.split_blocks(current)[1], awsconfig.split_blocks(new)[1]
+    counts = {o["name"]: len(config.catalog([o])) for o in orgs}
+    names = [o["name"] for o in orgs] + sorted(n for n in old_blocks if n not in counts)
+    lines = []
+    for name in names:
+        if name not in old_blocks and name in new_blocks:
+            lines.append("+ " + _("{org}: added · profiles: {count}", org=name, count=counts.get(name, 0)))
+        elif name in old_blocks and name not in new_blocks:
+            lines.append("- " + _("{org}: removed", org=name))
+        elif name in old_blocks and old_blocks[name] != new_blocks[name]:
+            lines.append("~ " + _("{org}: updated · profiles: {count}", org=name, count=counts.get(name, 0)))
+    return lines
+
+
 def cmd_sync(args) -> int:
+    embedded = getattr(args, "embedded", False)  # inside `rolehop setup`: indented, and setup prints the dry-run footer
+    pad = "  " if embedded else ""
     orgs = config.load_orgs()
+    target = ui.short(paths.AWS_CONFIG)
     current = paths.AWS_CONFIG.read_text() if paths.AWS_CONFIG.exists() else ""
     new_free, kept, problems = awsconfig.plan_sync(orgs, current, args.prune, set(getattr(args, "prune_only", None) or []))
     if problems:
-        ui.echo("✗ " + _("Some sections in {path}, outside the blocks managed by rolehop, conflict with generated profiles:",
-                         path=paths.AWS_CONFIG), err=True)
+        ui.echo(pad + "✗ " + _("Some sections in {path}, outside the blocks managed by rolehop, conflict with generated "
+                               "profiles:", path=target), err=True)
         for org, items in problems.items():
             for it in items:
-                ui.echo(f"    [{org}] {it}", err=True)
-        ui.echo("  → " + _("rename or remove them by hand (back up the file first), then run: {cmd}",
-                           cmd="rolehop sync"), err=True)
+                ui.echo(f"{pad}    [{org}] {it}", err=True)
+        ui.fix(_("rename or remove them by hand (back up the file first), then run: {cmd}", cmd="rolehop sync"),
+               indent=len(pad) + 2, err=True)
         return 2
     assert new_free is not None
     if kept:
-        ui.echo("! " + _("Kept the blocks of organizations no longer in orgs.toml: {orgs}", orgs=", ".join(kept)))
-        ui.echo("  → " + _("to remove them, run: {cmd}", cmd="rolehop sync --prune"))
-    total = sum(len(config.catalog([o])) for o in orgs)
+        ui.echo(pad + "! " + _("Kept the blocks of organizations no longer in orgs.toml: {orgs}", orgs=", ".join(kept)))
+        ui.fix(_("to remove them, run: {cmd}", cmd="rolehop sync --prune"), indent=len(pad) + 2)
+    total = len(config.catalog(orgs))
     if new_free == current:
-        ui.echo("✓ " + _("{path} already up to date ({total} profile(s)).", path=paths.AWS_CONFIG, total=total))
+        ui.echo(pad + "✓ " + _("{path} is already up to date. Profiles: {total}.", path=target, total=total))
         return 0
     if not args.quiet:
-        diff = difflib.unified_diff(current.splitlines(True), new_free.splitlines(True),
-                                    fromfile=str(paths.AWS_CONFIG), tofile=f"{paths.AWS_CONFIG} (new)")
-        sys.stdout.writelines(diff)
+        for line in sync_summary(current, new_free, orgs):
+            ui.echo(pad + line)
+        if args.dry_run or getattr(args, "diff", False):
+            ui.echo()
+            sys.stdout.writelines(difflib.unified_diff(current.splitlines(True), new_free.splitlines(True),
+                                                       fromfile=target, tofile=f"{target} (new)"))
     if args.dry_run:
-        ui.echo()
-        ui.echo("(" + _("dry run: nothing was written") + ")")
+        if embedded:
+            ui.echo(pad + _("[dry-run]") + " " + _("would update {path} · profiles: {total}", path=target, total=total))
+        else:
+            ui.dry_run_footer(shlex.join(["rolehop", "sync", *(["--prune"] if args.prune else [])]))
         return 0
-    awsconfig.write_aws_config(new_free)
-    ui.echo("✓ " + _("{path} updated: {total} profile(s) in {count} organization(s).",
-                     path=paths.AWS_CONFIG, total=total, count=len(orgs)))
+    awsconfig.write_aws_config(new_free, indent=pad)
+    ui.echo(pad + "✓ " + _("Updated {path}. Profiles: {total}, organizations: {count}.",
+                           path=target, total=total, count=len(orgs)))
     return 0
 
 
@@ -195,7 +220,7 @@ def cmd_login(args) -> int:
         cmd = ["aws", "sso", "login", "--sso-session", org["name"]]
         if device:
             cmd.append("--use-device-code")
-        ui.echo(f"→ {org['name']}: {' '.join(cmd)}")
+        ui.echo(_("Running: {cmd}", cmd=" ".join(cmd)))  # → is only for commands the user should run
         p = subprocess.run(cmd)
         ui.debug(f"aws sso login exited with {p.returncode}")
         if p.returncode == 0:
@@ -207,7 +232,7 @@ def cmd_login(args) -> int:
                 ui.echo("✓ " + _("{org}: logged in", org=org["name"]))
         else:
             ui.echo("✗ " + _("{org}: login failed (exit code {code}).", org=org["name"], code=p.returncode), err=True)
-            ui.echo("  → " + _("try again, or check the setup with: {cmd}", cmd="rolehop doctor"), err=True)
+            ui.fix(_("try again, or check the setup with: {cmd}", cmd="rolehop doctor"), indent=2, err=True)
             rc = 1
     return rc
 
@@ -222,7 +247,7 @@ def cmd_list(args) -> int:
         return 0
     if not rows:
         ui.echo(_("No profiles defined."))
-        ui.echo("→ " + _("add an organization with: {cmd}", cmd="rolehop init"))
+        ui.fix(_("add an organization with: {cmd}", cmd="rolehop init"), indent=2)
         return 0
     hp, ho, ha, hr = _("PROFILE"), _("ORG"), _("ACCOUNT"), _("ROLE")
     w = max([len(hp)] + [len(r["profile"]) for r in rows])
@@ -239,14 +264,14 @@ def cmd_list(args) -> int:
 def cmd_envrc(args) -> int:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", args.state_var):
         ui.echo("✗ " + _("Invalid variable name: {name}", name=args.state_var), err=True)
-        ui.echo("  → " + _("use letters, digits and _, not starting with a digit (e.g. {example})",
-                           example="TF_STATE_PROFILE"), err=True)
+        ui.fix(_("use letters, digits and _, not starting with a digit (e.g. {example})", example="TF_STATE_PROFILE"),
+               indent=2, err=True)
         return 2
     names = {r["profile"] for r in config.catalog(config.load_orgs())}
     for p in [args.profile] + ([args.state] if args.state else []):
         if p not in names:
             ui.echo("✗ " + _("Unknown profile: {profile}", profile=p), err=True)
-            ui.echo("  → " + _("see the available profiles with: {cmd}", cmd="rolehop list"), err=True)
+            ui.fix(_("see the available profiles with: {cmd}", cmd="rolehop list"), indent=2, err=True)
             return 2
     print("# .envrc generated by rolehop: default AWS profile for this repo.")
     print("# AI agents can use another profile by prefixing a command with AWS_PROFILE=<profile>.")
@@ -263,10 +288,10 @@ def cmd_discover(args) -> int:
         inv = portal.portal_inventory(org["name"], org["sso_region"])
     except errors.PortalError as exc:
         if isinstance(exc, portal.LoginNeeded):
-            ui.echo("✗ " + exc.reason, err=True)
+            ui.echo("✗ " + ui.sentence(exc.reason), err=True)
             ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}"), indent=2, err=True)
         else:
-            ui.echo("✗ " + str(exc), err=True)
+            ui.echo("✗ " + ui.sentence(str(exc)), err=True)
             ui.fix(_("run: {cmd}", cmd="rolehop doctor"), indent=2, err=True)
         return 1
     print(f"# Accounts and roles visible in {org['name']} ({len(inv)}). Paste into orgs.toml and adjust the names.")
@@ -334,17 +359,17 @@ def cmd_agent(args) -> int:
         ui.echo(f"{ha:<{wa}} {hd:<{wd}} {hi:<{wi}} {hh:<{wh}} {hr}")
         for r in rows:
             ui.echo(f"{r['agent']:<{wa}} {y if r['detected'] else '-':<{wd}} {y if r['installed'] else '-':<{wi}} "
-                    f"{r['hooks']:<{wh}} {r['rules']}")
+                    f"{r['hooks']:<{wh}} {ui.short(r['rules'])}")
         return 0
     try:
         targets = agents.resolve(args.names, args.all, home)
     except KeyError as exc:
         ui.echo("✗ " + str(exc.args[0]), err=True)
-        ui.echo("  → " + _("see the supported agents with: {cmd}", cmd="rolehop agent list"), err=True)
+        ui.fix(_("see the supported agents with: {cmd}", cmd="rolehop agent list"), indent=2, err=True)
         return 2
     if not targets:
         ui.echo(_("No installed AI agents detected."))
-        ui.echo("→ " + _("name them explicitly: {cmd}", cmd="rolehop agent install claude codex …"))
+        ui.fix(_("name them explicitly: {cmd}", cmd=f"rolehop agent {args.action} claude codex …"), indent=2)
         return 1
     ch = agents.Changes(args.dry_run)
     for a in targets:
@@ -353,44 +378,61 @@ def cmd_agent(args) -> int:
         else:
             agents.uninstall(a, home, ch)
     for line in ch.lines:
-        ui.echo(f"  {line}")
-    if args.action == "install" and not args.dry_run:
+        if line.startswith(agents.HINT):
+            ui.hint("  " + line[len(agents.HINT):])
+        else:
+            ui.echo(f"  {line}")
+    if args.action == "install" and ch.changed and not args.dry_run:
         ui.echo("  " + _("Restart your agents so they load the new instructions."))
+    if args.dry_run and not getattr(args, "embedded", False):
+        names = ["--all"] if args.all else list(args.names)
+        ui.dry_run_footer(shlex.join(["rolehop", "agent", args.action, *names,
+                                      *(["--no-hooks"] if getattr(args, "no_hooks", False) else [])]))
     return 1 if any(line.startswith("✗") for line in ch.lines) else 0
 
 
 def cmd_setup(args) -> int:
-    from rolehop import shellrc
+    from rolehop import agents, shellrc
+    rerun = shlex.join(["rolehop", "setup", *(["--no-agents"] if args.no_agents else []),
+                        *[x for name in (args.agents or []) for x in ("--agent", name)]])
     ui.echo("==> 1. " + _("Shell (PATH and direnv)"))
     for m in shellrc.ensure_shell_integration(dry_run=args.dry_run):
         ui.echo(f"  {m}")
     ui.echo("==> 2. " + _("Organizations"))
     if not paths.CONFIG_PATH.exists():
-        if args.dry_run or not sys.stdin.isatty():
-            ui.echo("  ! " + _("{path} not found.", path=paths.CONFIG_PATH))
-            ui.echo("    → " + _("run the wizard, then setup again: {cmd}", cmd="rolehop init && rolehop setup"))
-            return 0 if args.dry_run else 1
+        if args.dry_run:
+            ui.echo("  ! " + _("{path} not found: setup will start the wizard to create it.",
+                               path=ui.short(paths.CONFIG_PATH)))
+            ui.dry_run_footer(rerun)
+            return 0
+        if not sys.stdin.isatty():
+            ui.echo("  ! " + _("{path} not found.", path=ui.short(paths.CONFIG_PATH)))
+            ui.fix(_("run the wizard, then setup again: {cmd}", cmd="rolehop init && rolehop setup"), indent=4)
+            return 1
         rc = wizard.cmd_init(args)
         if rc != 0 or not paths.CONFIG_PATH.exists():
             return rc or 1
     else:
-        ui.echo("  ✓ " + _("Using {path}", path=paths.CONFIG_PATH))
-    ui.echo("==> 3. " + _("Profiles in {path}", path=paths.AWS_CONFIG))
-    rc = cmd_sync(argparse.Namespace(dry_run=args.dry_run, prune=False, quiet=True))
+        ui.echo("  ✓ " + _("Using {path}", path=ui.short(paths.CONFIG_PATH)))
+    ui.echo("==> 3. " + _("Profiles in {path}", path=ui.short(paths.AWS_CONFIG)))
+    rc = cmd_sync(argparse.Namespace(dry_run=args.dry_run, prune=False, quiet=True, embedded=True))
     if rc != 0:
         return rc
     ui.echo("==> 4. " + _("AI agents"))
     if args.no_agents:
         ui.echo("  (" + _("skipped: --no-agents") + ")")
+    elif not args.agents and not agents.resolve([], False, Path.home()):
+        ui.echo("  (" + _("no agents detected") + ")")
+        ui.fix(_("install them later with: {cmd}", cmd="rolehop agent install <agent>"), indent=4)
     else:
-        rc = cmd_agent(argparse.Namespace(action="install", names=args.agents or [], all=False,
-                                          dry_run=args.dry_run, no_hooks=False, json=False))
-        if rc == 1 and not args.agents:
-            ui.echo("  (" + _("no agents detected") + ")")
-            ui.echo("    → " + _("install them later with: {cmd}", cmd="rolehop agent install <agent>"))
+        cmd_agent(argparse.Namespace(action="install", names=args.agents or [], all=False, dry_run=args.dry_run,
+                                     no_hooks=False, json=False, embedded=True))
+    if args.dry_run:
+        ui.dry_run_footer(rerun)
+        return 0
     ui.echo("==> " + _("Done"))
-    ui.echo("  → " + _("sign in and check the sessions: {cmd}", cmd="rolehop login && rolehop status"))
-    ui.echo("  " + _('Then tell your agent: "use whatever AWS profiles and roles you need".'))
+    ui.fix(_("sign in and check the sessions: {cmd}", cmd="rolehop login && rolehop status"), indent=2)
+    ui.hint("  " + _('Then tell your agent: "use whatever AWS profiles and roles you need".'))
     return 0
 
 
@@ -422,8 +464,14 @@ class Parser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the full argument parser (also used to generate shell completion)."""
+    examples = [("rolehop setup", _("set everything up (first time)")),
+                ("rolehop login", _("sign in where the session expired")),
+                ("rolehop status", _("check the sessions")),
+                ("rolehop list", _("show the available profiles"))]
+    width = max(len(cmd) for cmd, _text in examples)
+    epilog = _("Examples:") + "\n" + "\n".join(f"  {cmd:<{width}}  {text}" for cmd, text in examples)
     ap = Parser(
-        prog="rolehop", allow_abbrev=False,
+        prog="rolehop", allow_abbrev=False, formatter_class=argparse.RawDescriptionHelpFormatter, epilog=epilog,
         description="rolehop: " + _("declarative AWS IAM Identity Center profiles for any number of organizations."))
     ap.add_argument("--version", action="version", version=f"rolehop {VERSION}")
     ap.add_argument("-v", "--verbose", action="store_true",
@@ -436,27 +484,28 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("sync", help=_("write the profiles to ~/.aws/config"))
     s.add_argument("--dry-run", action="store_true", help=_("show the changes without writing anything"))
     s.add_argument("--prune", action="store_true", help=_("remove blocks for organizations no longer in orgs.toml"))
-    s.add_argument("--quiet", action="store_true", help=_("don't show the diff"))
+    s.add_argument("--diff", action="store_true", help=_("also show the full diff (always shown with --dry-run)"))
+    s.add_argument("--quiet", action="store_true", help=_("don't show the summary or the diff"))
     s.set_defaults(func=cmd_sync)
 
     s = sub.add_parser("login", help=_("run aws sso login only where needed (shortcut: awslogin)"))
-    s.add_argument("orgs", nargs="*")
+    s.add_argument("orgs", nargs="*", help=_("organizations (default: all)"))
     s.add_argument("--device", action="store_true", help=_("force the device code flow"))
     s.add_argument("--force", action="store_true", help=_("log in even if a session exists"))
     s.set_defaults(func=cmd_login)
 
     s = sub.add_parser("status", help=_("session status per organization"))
-    s.add_argument("orgs", nargs="*")
-    s.add_argument("--json", action="store_true")
+    s.add_argument("orgs", nargs="*", help=_("organizations (default: all)"))
+    s.add_argument("--json", action="store_true", help=_("machine-readable output"))
     s.set_defaults(func=cmd_status)
 
     s = sub.add_parser("list", help=_("catalog of profiles"))
-    s.add_argument("--json", action="store_true")
-    s.add_argument("--org")
+    s.add_argument("--json", action="store_true", help=_("machine-readable output"))
+    s.add_argument("--org", help=_("only the profiles of this organization"))
     s.set_defaults(func=cmd_list)
 
     s = sub.add_parser("envrc", help=_("print an .envrc for direnv"))
-    s.add_argument("profile")
+    s.add_argument("profile", help=_("default profile for the directory"))
     s.add_argument("--state", help=_("profile for the Terraform/Terragrunt remote state"))
     s.add_argument("--state-var", default="AWS_STATE_PROFILE",
                    help=_("variable that holds the state profile (default: AWS_STATE_PROFILE)"))
@@ -465,12 +514,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("init", help=_("wizard: asks for your organizations and creates orgs.toml"))
     s.set_defaults(func=wizard.cmd_init)
 
-    s = sub.add_parser("discover", help=_("list an organization's accounts and roles from the portal (requires a session)"))
-    s.add_argument("org")
+    s = sub.add_parser("discover", help=_("list an organization's accounts and roles from the access portal "
+                                          "(requires a session)"))
+    s.add_argument("org", help=_("organization name"))
     s.set_defaults(func=cmd_discover)
 
     s = sub.add_parser("setup", help=_("all-in-one: PATH, wizard if no config, profiles and AI agents"))
-    s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--dry-run", action="store_true", help=_("show the changes without writing anything"))
     s.add_argument("--no-agents", action="store_true", help=_("don't install instructions/hooks for agents"))
     s.add_argument("--agent", dest="agents", action="append", help=_("a specific agent (repeatable); default: detected ones"))
     s.set_defaults(func=cmd_setup)
@@ -487,9 +537,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=["list", "install", "uninstall", "rules"])
     s.add_argument("names", nargs="*", help=_("agents; default: detected ones"))
     s.add_argument("--all", action="store_true", help=_("all supported agents"))
-    s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--no-hooks", action="store_true")
-    s.add_argument("--json", action="store_true")
+    s.add_argument("--dry-run", action="store_true", help=_("show the changes without writing anything"))
+    s.add_argument("--no-hooks", action="store_true", help=_("install the rules only, without hooks"))
+    s.add_argument("--json", action="store_true", help=_("machine-readable output (only with list)"))
     s.set_defaults(func=cmd_agent)
 
     from rolehop import completion, doctor, manage, upgrade
@@ -561,14 +611,14 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             ui.echo("! " + _("Could not copy the old {legacy} configuration: {error}",
                              legacy=paths.LEGACY_NAME, error=exc), err=True)
-            ui.echo("  → " + _("copy {old} to {new} by hand", old=paths.LEGACY_CONFIG_PATH, new=paths.CONFIG_PATH),
-                    err=True)
+            ui.fix(_("copy {old} to {new} by hand", old=ui.short(paths.LEGACY_CONFIG_PATH), new=ui.short(paths.CONFIG_PATH)),
+                   indent=2, err=True)
     try:
         return args.func(args)
     except errors.ConfigError as exc:
         ui.echo("✗ " + str(exc), err=True)
         if fix := getattr(exc, "fix", ""):
-            ui.echo("  → " + fix, err=True)
+            ui.fix(fix, indent=2, err=True)
         return 2
 
 

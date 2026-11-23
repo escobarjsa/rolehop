@@ -1,3 +1,3 @@
 """rolehop: AWS IAM Identity Center profiles across multiple organizations, ready for humans and AI agents."""
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"

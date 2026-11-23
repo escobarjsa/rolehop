@@ -329,7 +329,7 @@ def test_doctor_errors(env, no_agents, monkeypatch, capsys):
     monkeypatch.setattr(doctor, "aws_cli_version", lambda: None)
     assert cli_.main(["doctor"]) == 1  # no aws, no orgs.toml
     out = capsys.readouterr().out
-    assert "✗ aws-cli" in out and "✗ orgs.toml" in out and "rolehop init" in out
+    assert "✗ aws-cli" in out and "✗ orgs.toml" in out and "rolehop setup" in out
     monkeypatch.setattr(doctor, "aws_cli_version", lambda: (2, 10, 0))
     p.orgs.write_text(SAMPLE)
     p.aws.write_text("[profile acme-prod-admin]\nregion = eu-west-1\n")

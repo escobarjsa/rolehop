@@ -26,16 +26,19 @@ LEGACY_STATE_DIR = STATE_DIR.with_name(LEGACY_NAME)
 
 def migrate_legacy() -> list[str]:
     """Copy awsorg's orgs.toml and state to the rolehop paths if they don't exist yet. Never deletes anything."""
+    from rolehop import ui
     from rolehop.i18n import _  # imported here: rolehop.i18n imports this module
     msgs = []
     if not env("CONFIG") and not CONFIG_PATH.exists() and LEGACY_CONFIG_PATH.is_file():
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(LEGACY_CONFIG_PATH, CONFIG_PATH)
         os.chmod(CONFIG_PATH, 0o600)
-        msgs.append("✓ " + _("migrated {old} to {new} (original kept)", old=LEGACY_CONFIG_PATH, new=CONFIG_PATH))
+        msgs.append("✓ " + _("Migrated {old} to {new} (original kept)", old=ui.short(LEGACY_CONFIG_PATH),
+                             new=ui.short(CONFIG_PATH)))
     if not STATE_DIR.exists() and LEGACY_STATE_DIR.is_dir():
         shutil.copytree(LEGACY_STATE_DIR, STATE_DIR)
-        msgs.append("✓ " + _("migrated state from {old} to {new}", old=LEGACY_STATE_DIR, new=STATE_DIR))
+        msgs.append("✓ " + _("Migrated the state from {old} to {new}", old=ui.short(LEGACY_STATE_DIR),
+                             new=ui.short(STATE_DIR)))
     return msgs
 
 

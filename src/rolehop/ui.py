@@ -86,6 +86,8 @@ def item(kind: str, name: str, detail: str, fix: str = "", *, width: int = 0, er
     """
     stream = sys.stderr if err else sys.stdout
     pad = max(width, len(name))
+    if kind == "info":  # secondary facts (· direnv  not installed) are dimmed, never green
+        detail = paint(detail, "dim", stream)
     head = f"{paint(symbol(kind, stream), kind, stream)} {paint(name.ljust(pad), 'bold', stream)}  {detail}"
     print(head.rstrip(), file=stream)
     if fix:
@@ -96,6 +98,19 @@ def fix(text: str, *, indent: int = 0, err: bool = False) -> None:
     """The next step, on its own line: "→ run: rolehop sync". Same look everywhere."""
     stream = sys.stderr if err else sys.stdout
     print(" " * indent + paint(symbol("next", stream) + " " + text, "next", stream), file=stream)
+
+
+def dry_run_footer(command: str) -> None:
+    """End of every --dry-run: one shared notice, then the same command without --dry-run."""
+    from rolehop.i18n import _  # imported here: ui has no dependencies at import time
+    echo()
+    echo(_("(dry run: nothing was written)"))
+    fix(_("run: {cmd}", cmd=command), indent=2)
+
+
+def sentence(text: str) -> str:
+    """Capitalize the first letter, for a message shown after ✓ / ✗ / ! (identifiers are left alone by callers)."""
+    return text[:1].upper() + text[1:]
 
 
 def short(path: object) -> str:

@@ -25,7 +25,7 @@ AWS_CLI_INSTALL = "https://docs.aws.amazon.com/cli/latest/userguide/getting-star
 @dataclass
 class Check:
     name: str
-    status: str  # "ok" | "warn" | "error"
+    status: str  # "ok" | "warn" | "error" | "info" (a neutral fact: nothing to fix, not counted)
     detail: str
     fix: str = ""
 
@@ -79,23 +79,27 @@ def run_checks(online: bool = False) -> list[Check]:
         checks.append(Check("path", "warn", _("the `awslogin` shortcut is not on PATH"),
                             _run("uv tool install --force rolehop")))
     elif Path(login).resolve().parent != Path(exe).resolve().parent:
-        checks.append(Check("path", "warn", _("`awslogin` resolves to {path}, not next to rolehop (an old copy?)", path=login),
-                            _("remove {path}, or reinstall with --force", path=login)))
+        checks.append(Check("path", "warn", _("`awslogin` resolves to {path}, not next to rolehop (an old copy?)",
+                                              path=ui.short(login)),
+                            _("remove {path}, or reinstall with --force", path=ui.short(login))))
     else:
-        checks.append(Check("path", "ok", _("`rolehop` and `awslogin` in {path}", path=Path(exe).parent)))
+        checks.append(Check("path", "ok", _("`rolehop` and `awslogin` in {path}", path=ui.short(Path(exe).parent))))
     for old in ("awsorg", "claude-aws-run"):
         if found := shutil.which(old):
             checks.append(Check("legacy", "warn", _("the old `{command}` command is still on PATH ({path})",
-                                                    command=old, path=found), _run(f"rm {found}")))
+                                                    command=old, path=ui.short(found)), _run(f"rm {found}")))
 
     orgs: list[dict] = []
     try:
         orgs = config.load_orgs()
         total = len(config.catalog(orgs))
-        checks.append(Check("orgs.toml", "ok", _("{path}: {orgs} org(s), {profiles} profile(s)",
+        checks.append(Check("orgs.toml", "ok", _("{path} · organizations: {orgs}, profiles: {profiles}",
                                                  path=ui.short(paths.CONFIG_PATH), orgs=len(orgs), profiles=total)))
     except errors.ConfigError as exc:
-        checks.append(Check("orgs.toml", "error", str(exc), _("run: {cmd} (or fix the file)", cmd="rolehop init")))
+        if not paths.CONFIG_PATH.exists():  # first run: setup does everything (wizard, profiles, agents)
+            checks.append(Check("orgs.toml", "error", str(exc), _run("rolehop setup")))
+        else:
+            checks.append(Check("orgs.toml", "error", str(exc), getattr(exc, "fix", "")))
 
     if orgs:
         current = paths.AWS_CONFIG.read_text() if paths.AWS_CONFIG.exists() else ""
@@ -148,16 +152,16 @@ def run_checks(online: bool = False) -> list[Check]:
         checks.append(Check("shell", "warn", _("{path} is not set up (PATH may be missing ~/.local/bin)", path=ui.short(rc)),
                             _run("rolehop setup")))
     if not shutil.which("direnv"):
-        checks.append(Check("direnv", "ok", _("not installed (optional, for per-repository defaults)")))
+        checks.append(Check("direnv", "info", _("not installed (optional, for per-repository defaults)")))
 
     home = Path.home()
     detected = [agents.status(a, home) for a in agents.AGENTS.values()]
     detected = [s for s in detected if s["detected"]]
     if not detected:
-        checks.append(Check("agents", "ok", _("no AI coding agents detected")))
+        checks.append(Check("agents", "info", _("no AI coding agents detected")))
     for st in detected:
         if st["installed"]:
-            checks.append(Check(f"agent:{st['agent']}", "ok", _("rules installed ({path})", path=st["rules"])))
+            checks.append(Check(f"agent:{st['agent']}", "ok", _("rules installed ({path})", path=ui.short(st["rules"]))))
         else:
             checks.append(Check(f"agent:{st['agent']}", "warn", _("detected, but its rules are not installed"),
                                 _run(f"rolehop agent install {st['agent']}")))
@@ -186,14 +190,14 @@ def cmd_doctor(args) -> int:
         return 1 if any(c.status == "error" for c in checks) else 0
     width = max((len(c.name) for c in checks), default=0)
     for c in checks:
-        ui.item(c.status, c.name, c.detail, c.fix if c.status != "ok" else "", width=width)
+        ui.item(c.status, c.name, c.detail, c.fix if c.status in ("warn", "error") else "", width=width)
     warns = sum(c.status == "warn" for c in checks)
     errs = sum(c.status == "error" for c in checks)
     ui.echo()
     if errs:
-        ui.echo("✗ " + _("{errors} error(s), {warnings} warning(s).", errors=errs, warnings=warns))
+        ui.echo("✗ " + _("Errors: {errors}, warnings: {warnings}.", errors=errs, warnings=warns))
     elif warns:
-        ui.echo("! " + _("{warnings} warning(s), no errors.", warnings=warns))
+        ui.echo("! " + _("Warnings: {warnings}, no errors.", warnings=warns))
     else:
         ui.echo("✓ " + _("Everything looks good."))
     return 1 if errs else 0

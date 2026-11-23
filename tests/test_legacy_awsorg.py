@@ -61,13 +61,13 @@ def test_migrates_awsorg_config_and_state(tmp_path, monkeypatch, capsys):
     from rolehop import cli
     assert cli.main(["list"]) == 0
     out = capsys.readouterr()
-    assert "migrated" in out.err and "acme-devsecops-admin" in out.out
+    assert "Migrated" in out.err and "acme-devsecops-admin" in out.out
     assert (home / ".config/rolehop/orgs.toml").read_text() == SAMPLE
     assert (home / ".config/awsorg/orgs.toml").exists()  # the original is kept
     assert (tmp_path / "state/rolehop/acme.json").exists()
     capsys.readouterr()
     cli.main(["list"])
-    assert "migrated" not in capsys.readouterr().err  # only the first time
+    assert "Migrated" not in capsys.readouterr().err  # only the first time
 
 
 def test_awsorg_config_env_var_still_works(tmp_path, monkeypatch):

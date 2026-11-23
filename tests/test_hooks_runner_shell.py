@@ -97,7 +97,7 @@ def test_shellrc_idempotent(tmp_path, monkeypatch):
     text = (home / ".zshrc").read_text()
     assert text.startswith("# mine\n") and shellrc.MARK_BEGIN in text and ".local/bin" in text
     assert "direnv hook zsh" in text
-    assert any("backup" in m for m in msgs)
+    assert any("Backup" in m for m in msgs)
     again = shellrc.ensure_shell_integration(home=home, shell="zsh")
     assert (home / ".zshrc").read_text() == text and "already has" in again[0]
 

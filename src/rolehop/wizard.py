@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from typing import Any
 
 from rolehop import config, errors, paths, portal, ui
@@ -21,7 +22,7 @@ def ask(prompt: str, default: str | None = None, validate=None, error: str = "")
             val = default
         if val and (validate is None or validate(val)):
             return val
-        ui.echo("    ✗ " + (error or _("invalid value")))
+        ui.echo("    ✗ " + ui.sentence(error or _("invalid value")))
 
 
 def yes(prompt: str, default: bool = True) -> bool:
@@ -60,7 +61,7 @@ def manual_accounts(roles_map: dict) -> list[dict]:
     while True:
         name = ask(_("Account short name (e.g. devsecops)"), None, config.NAME_RE.match, name_error())
         acc_id = ask(_("Account ID (12 digits)"), None, lambda v: re.fullmatch(r"\d{12}", v), _("must be 12 digits"))
-        roles_txt = ask(_("Roles, comma-separated, exactly as shown in the portal (e.g. Administrator, ReadOnly)"))
+        roles_txt = ask(_("Roles, comma-separated, exactly as shown in the access portal (e.g. Administrator, ReadOnly)"))
         aliases = []
         for ps in [r.strip() for r in roles_txt.split(",") if r.strip()]:
             alias = next((k for k, v in roles_map.items() if v == ps), None) or config.role_alias(ps)
@@ -94,7 +95,7 @@ def new_org(existing: list[dict]) -> dict:
                      _("expected a region, e.g. us-east-1"))
     region = ask(_("Default region for profiles"), sso_region,
                  lambda v: re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", v), _("expected a region, e.g. us-east-1"))
-    hours = ask(_("Portal session length in hours (if unsure, 8)"), "8",
+    hours = ask(_("Access portal session length in hours (if unsure, 8)"), "8",
                 lambda v: re.fullmatch(r"\d{1,4}(\.\d+)?", v), _("expected a number of hours"))
     org: dict[str, Any] = {"name": name, "start_url": url, "sso_region": sso_region, "region": region,
                            "login_flow": "device",
@@ -106,10 +107,10 @@ def new_org(existing: list[dict]) -> dict:
                 raise errors.PortalError(_("sign-in did not complete"))
             inv = portal.portal_inventory(name, sso_region)
             if not inv:
-                raise errors.PortalError(_("the portal returned no accounts"))
+                raise errors.PortalError(_("the access portal returned no accounts"))
             org["accounts"] = accounts_from_inventory(name, inv, org["roles"], ask_names=False)
             ui.echo()
-            ui.echo("  " + _("Found {count} account(s):", count=len(inv)))
+            ui.echo("  " + _("Accounts found: {count}", count=len(inv)))
             print_accounts(name, org["accounts"], org["roles"])
             if not yes(_("Use these short names for the profiles?")):
                 org["roles"] = {}
@@ -126,7 +127,7 @@ def new_org(existing: list[dict]) -> dict:
 
 def refresh_org(org: dict) -> None:
     ui.echo()
-    ui.echo("  " + _("Refreshing accounts and roles for '{org}' from the portal.", org=org["name"]))
+    ui.echo("  " + _("Refreshing accounts and roles for '{org}' from the access portal.", org=org["name"]))
     if not portal.login_for_discovery(org):
         raise config.FixableError(_("Sign-in to '{org}' did not complete.", org=org["name"]),
                                   _("run: {cmd}", cmd=f"rolehop login {org['name']} && rolehop refresh {org['name']}"))
@@ -164,6 +165,10 @@ def refresh_org(org: dict) -> None:
 
 
 def cmd_init(args) -> int:
+    if not sys.stdin.isatty():  # fail before showing a menu nobody can answer
+        ui.echo("✗ " + _("The wizard needs an interactive terminal to ask its questions."), err=True)
+        ui.fix(_("open a terminal and run: {cmd}", cmd="rolehop init"), indent=2, err=True)
+        return 2
     ui.echo()
     ui.echo("=== rolehop: " + _("setup wizard for AWS IAM Identity Center organizations") + " ===")
     orgs: list[dict] = []
@@ -171,10 +176,10 @@ def cmd_init(args) -> int:
         try:
             orgs = config.load_orgs()
         except errors.ConfigError as exc:
-            ui.echo("  ✗ " + _("Your {path} has a problem: {error}", path=paths.CONFIG_PATH, error=exc))
-            ui.echo("    → " + _("fix it or move it aside, then run: {cmd}", cmd="rolehop init"))
+            ui.echo("  ✗ " + _("Your {path} has a problem: {error}", path=ui.short(paths.CONFIG_PATH), error=exc))
+            ui.fix(_("fix it or move it aside, then run: {cmd}", cmd="rolehop init"), indent=4)
             return 2
-        ui.echo("  " + _("You already have {path} with: {orgs}", path=paths.CONFIG_PATH,
+        ui.echo("  " + _("You already have {path} with: {orgs}", path=ui.short(paths.CONFIG_PATH),
                          orgs=", ".join(o["name"] for o in orgs)))
         ui.hint("  " + _("If you edited it by hand, comments will be lost on save (a backup is made first)."))
     changed = False
@@ -183,7 +188,7 @@ def cmd_init(args) -> int:
             ui.echo()
             ui.echo("  " + _("What would you like to do?"))
             ui.echo("    1) " + _("Add another organization"))
-            ui.echo("    2) " + _("Refresh an organization's accounts and roles (from the portal)"))
+            ui.echo("    2) " + _("Refresh an organization's accounts and roles (from the access portal)"))
             ui.echo("    3) " + _("Finish"))
             choice = ask(_("Choice"), "3", lambda v: v in ("1", "2", "3"), _("choose 1, 2 or 3"))
         else:
@@ -211,7 +216,7 @@ def cmd_init(args) -> int:
     config.load_orgs()  # final check with the same rules as sync
     if getattr(args, "cmd", "init") != "setup":  # `rolehop setup` writes the profiles itself right after
         ui.echo()
-        ui.echo("  " + _("Next, review and write the profiles to {path}:", path=paths.AWS_CONFIG))
-        ui.echo("  → " + _("run: {cmd}", cmd="rolehop sync --dry-run"))
-        ui.echo("  → " + _("run: {cmd}", cmd="rolehop sync"))
+        ui.echo("  " + _("Next, review and write the profiles to {path}:", path=ui.short(paths.AWS_CONFIG)))
+        ui.fix(_("run: {cmd}", cmd="rolehop sync --dry-run"), indent=2)
+        ui.fix(_("run: {cmd}", cmd="rolehop sync"), indent=2)
     return 0

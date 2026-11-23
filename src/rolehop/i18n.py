@@ -26,7 +26,7 @@ import tomllib
 from functools import cache
 from importlib import resources
 
-from rolehop import paths
+from rolehop import paths, ui
 
 SUPPORTED = ("en", "es", "pt")
 NAMES = {"en": "English", "es": "Español", "pt": "Português"}
@@ -70,12 +70,12 @@ def write_language(code: str | None) -> None:
             with target.open("rb") as fh:
                 settings = tomllib.load(fh)
         except (OSError, tomllib.TOMLDecodeError) as exc:
-            raise SettingsError(f"{target} is not valid TOML ({exc})") from None
+            raise SettingsError(f"{ui.short(target)} is not valid TOML ({exc})") from None
     settings.pop("language", None)
     unsupported = [k for k, v in settings.items()
                    if not _BARE_KEY.match(k) or isinstance(v, (dict, list)) or not isinstance(v, (str, int, float, bool))]
     if unsupported:
-        raise SettingsError(f"{target} has settings rolehop cannot rewrite safely: {', '.join(unsupported)}")
+        raise SettingsError(f"{ui.short(target)} has settings rolehop cannot rewrite safely: {', '.join(unsupported)}")
     if code:
         settings["language"] = code
     lines = ["# rolehop user settings. Change the language with: rolehop language <en|es|pt|auto>"]

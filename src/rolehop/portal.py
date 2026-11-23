@@ -52,10 +52,10 @@ def portal_get(region: str, path: str, token: str, params: dict) -> dict:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise LoginNeeded(_("the portal rejected the token (the session expired)")) from None
-        raise errors.PortalError(_("HTTP error {code} from the SSO portal", code=exc.code)) from None
+            raise LoginNeeded(_("the access portal rejected the token (the session expired)")) from None
+        raise errors.PortalError(_("HTTP error {code} from the access portal", code=exc.code)) from None
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        raise errors.PortalError(_("could not reach the SSO portal: {error}", error=exc)) from None
+        raise errors.PortalError(_("could not reach the access portal: {error}", error=exc)) from None
 
 
 def portal_inventory(session_name: str, region: str) -> list[dict]:

@@ -93,6 +93,6 @@ def run(orgs_names: list[str], max_value: str, login: bool, yes: bool, command: 
     if blocked:
         ui.echo()
         ui.echo("! " + _("The AWS session ended during the work in: {orgs}", orgs=" ".join(blocked)))
-        ui.echo("→ " + _("run: {cmd}", cmd=f"rolehop login {' '.join(blocked)}"))
-        ui.echo("→ " + _("then resume your agent's conversation (in Claude Code: claude --continue)"))
+        ui.fix(_("run: {cmd}", cmd=f"rolehop login {' '.join(blocked)}"), indent=2)
+        ui.fix(_("then resume your agent's conversation (in Claude Code: claude --continue)"), indent=2)
     return rc

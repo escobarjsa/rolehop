@@ -64,8 +64,8 @@ def test_plan_refresh_adds_and_flags_revoked_without_prune(sample):
     assert accs["prod"]["roles"] == ["admin"]  # missing account: kept without --prune
     assert accs["new"]["roles"] == ["ro"] and new["roles"]["power"] == "PowerUser"
     text = "\n".join(changes)
-    assert "+ role acme-devsecops-power" in text and "+ account new" in text
-    assert "! role acme-devsecops-ro" in text and "--prune" in text and "! account prod" in text
+    assert "+ Role acme-devsecops-power" in text and "+ Account new" in text
+    assert "! Role acme-devsecops-ro" in text and "--prune" in text and "! Account prod" in text
     assert org["accounts"][0]["roles"] == ["admin", "ro"]  # does not mutate the original org
 
 
@@ -97,7 +97,7 @@ def test_refresh_dry_run_apply_and_prune(live, capsys, monkeypatch):
     snapshot = p.orgs.read_text()
     assert cli.main(["refresh"]) == 0  # idempotent: only repeats the revoked-role warning
     out = capsys.readouterr().out
-    assert p.orgs.read_text() == snapshot and "+ " not in out and "! role acme-devsecops-ro" in out
+    assert p.orgs.read_text() == snapshot and "+ " not in out and "! Role acme-devsecops-ro" in out
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: False, raising=False)
     assert cli.main(["refresh", "--prune"]) == 1  # removing profiles requires confirmation
@@ -326,7 +326,7 @@ def test_uninstall_without_aws_config_and_with_broken_config(sample, capsys):
     p.aws.write_text("# >>> rolehop:acme (managed by rolehop, do not edit) >>>\n[sso-session acme]\n")
     capsys.readouterr()
     assert cli.main(["uninstall", "--yes"]) == 1  # unclosed marker: left untouched, with a warning
-    assert "rolehop:acme" in p.aws.read_text() and "incomplete" in capsys.readouterr().out
+    assert "rolehop:acme" in p.aws.read_text() and "incomplete" in capsys.readouterr().err
 
 
 def test_uninstall_preserves_user_blank_lines(sample):

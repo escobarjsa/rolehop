@@ -42,14 +42,15 @@ rolehop init
 Writes the profiles into `~/.aws/config`, inside managed blocks.
 
 ```text
-rolehop sync [--dry-run] [--prune] [--quiet]
+rolehop sync [--dry-run] [--diff] [--prune] [--quiet]
 ```
 
 | Option | Description |
 |---|---|
-| `--dry-run` | Show the diff without writing. |
+| `--dry-run` | Show the summary and the full diff without writing. |
+| `--diff` | Also print the full diff (by default only a one-line summary per organization). |
 | `--prune` | Remove blocks of organizations no longer in `orgs.toml`. |
-| `--quiet` | Do not print the diff. |
+| `--quiet` | Print neither the summary nor the diff. |
 
 Exit code `2` on validation errors or conflicts; nothing is written in that case.
 

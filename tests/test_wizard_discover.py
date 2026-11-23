@@ -67,8 +67,15 @@ def portal(env, monkeypatch):
     srv.shutdown()
 
 
+class Terminal(io.StringIO):
+    """Typed answers on a stdin that looks like a terminal (the wizard refuses to run without one)."""
+
+    def isatty(self) -> bool:
+        return True
+
+
 def answer(monkeypatch, lines):
-    monkeypatch.setattr("sys.stdin", io.StringIO("\n".join(lines) + "\n"))
+    monkeypatch.setattr("sys.stdin", Terminal("\n".join(lines) + "\n"))
 
 
 def test_init_discovers_and_creates_orgs(portal, monkeypatch, capsys):
@@ -103,7 +110,7 @@ def test_init_manual_entry_and_validation(env, monkeypatch, capsys):
                          "main", "123", "999999999999", "AdministratorAccess", "n", "n"])
     assert cli.main(["init"]) == 0
     out = capsys.readouterr().out
-    assert "must be https" in out and "12 digits" in out
+    assert "Must be https" in out and "12 digits" in out
     org = config.load_orgs()[0]
     assert org["sso_region"] == "us-east-2" and org["accounts"][0]["roles"] == ["admin"]
 

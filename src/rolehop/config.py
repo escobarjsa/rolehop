@@ -32,20 +32,21 @@ class FixableError(errors.ConfigError):
 def load_orgs(path: Path | None = None) -> list[dict]:
     """Load and validate orgs.toml (default: the configured path), filling in defaults. Raise ConfigError on any problem."""
     path = path or paths.CONFIG_PATH
+    shown = ui.short(path)
     if not path.exists():
-        raise FixableError(_("{path} not found.", path=path), _("run: {cmd}", cmd="rolehop init"))
+        raise FixableError(_("{path} not found.", path=shown), _("run: {cmd}", cmd="rolehop init"))
 
     def bad(message: str) -> FixableError:
-        return FixableError(message, _("fix {path}, then run the command again", path=path))
+        return FixableError(message, _("fix {path}, then run the command again", path=shown))
 
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise bad(_("{path} is not valid TOML: {error}", path=path, error=exc)) from None
+        raise bad(_("{path} is not valid TOML: {error}", path=shown, error=exc)) from None
     orgs = data.get("org", [])
     if not orgs:
-        raise bad(_("{path} does not define any [[org]].", path=path))
+        raise bad(_("{path} does not define any [[org]].", path=shown))
     seen = set()
     for org in orgs:
         if not isinstance(org, dict):
@@ -257,12 +258,12 @@ def write_orgs(orgs: list[dict]) -> None:
     if paths.CONFIG_PATH.exists():
         backup = paths.CONFIG_PATH.with_name(f"{paths.CONFIG_PATH.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(paths.CONFIG_PATH, backup)
-        ui.echo("  ✓ " + _("Backup: {path}", path=backup))
+        ui.echo("  ✓ " + _("Backup: {path}", path=ui.short(backup)))
     tmp = paths.CONFIG_PATH.with_name(paths.CONFIG_PATH.name + ".tmp")
     tmp.write_text(text)
     os.chmod(tmp, 0o600)
     tmp.replace(paths.CONFIG_PATH)
-    ui.echo("  ✓ " + _("Saved {path}", path=paths.CONFIG_PATH))
+    ui.echo("  ✓ " + _("Saved {path}", path=ui.short(paths.CONFIG_PATH)))
 
 
 def alias_for(ps: str, roles_map: dict) -> str:
