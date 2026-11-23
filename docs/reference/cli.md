@@ -1,7 +1,7 @@
 # CLI reference
 
 ```text
-rolehop [-h] [--version] [-v] {setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,doctor,upgrade,completion,uninstall} ...
+rolehop [-h] [--version] [-v] [--lang {en,es,pt}] [--no-color] {setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,doctor,language,upgrade,completion,uninstall} ...
 ```
 
 Every command that modifies files makes a timestamped backup (`<file>.bak-YYYYmmdd-HHMMSS`) first, and most accept `--dry-run`.
@@ -11,6 +11,8 @@ Global options:
 | Option | Description |
 |---|---|
 | `-v`, `--verbose` | Print debug details to stderr: commands run, files written, URLs requested (never tokens). Same as `ROLEHOP_DEBUG=1`, which also works inside agent hooks. Put it before the subcommand: `rolehop -v sync`. |
+| `--lang {en,es,pt}` | Language for this run. See [Language and output](../guide/language.md). |
+| `--no-color` | Disable colors (also `NO_COLOR=1`). |
 | `--version` | Print the version. |
 
 ## `rolehop setup`
@@ -68,7 +70,7 @@ awslogin      [--device] [--force] [ORG ...]
 
 ## `rolehop status`
 
-Session status per organization, with the estimated time left.
+Session status per organization, with the estimated time left. Each problem is followed by the command that fixes it: `rolehop sync` when the organization's profiles are not in `~/.aws/config` yet, or `rolehop login <org>` when the session has ended. Exit code `1` if any organization is not ready.
 
 ```text
 rolehop status [--json] [ORG ...]
@@ -178,6 +180,16 @@ rolehop upgrade [--check] [--force]
 |---|---|
 | `--check` | Only report whether a newer version exists. |
 | `--force` | Reinstall even if you already have the latest version. |
+
+## `rolehop language`
+
+Shows or changes the language of rolehop's messages. The choice is saved in `~/.config/rolehop/settings.toml`.
+
+```text
+rolehop language [en|es|pt|auto]
+```
+
+Without an argument it prints the current language and where it comes from. `auto` goes back to following the system locale. See [Language and output](../guide/language.md).
 
 ## `rolehop completion`
 

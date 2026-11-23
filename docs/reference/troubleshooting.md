@@ -4,7 +4,9 @@ Start with `rolehop doctor`: it checks the whole installation and prints the com
 
 | Symptom | Fix |
 |---|---|
-| `✗ <org> … no session · run: rolehop login <org>` | Run `rolehop login <org>`. |
+| `✗ <org>  profiles are not in ~/.aws/config yet` | The org is in `orgs.toml` but was never synced: `rolehop sync`. |
+| `✗ <org>  session expired` or `no session` | Run `rolehop login <org>`. |
+| Messages in the wrong language | `rolehop language en` (or `es`, `pt`); check `ROLEHOP_LANG` is not set. |
 | `Token has expired and refresh failed` / `SSO session … expired` | The portal session ended: `rolehop login <org>`. |
 | `command not found: rolehop` or `awslogin` | Open a new terminal, or run `rolehop setup` again to fix `PATH`. |
 | `The config profile (x) could not be found` | Check the exact name with `rolehop list`. |

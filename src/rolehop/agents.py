@@ -13,11 +13,12 @@ import datetime as dt
 import json
 import shutil
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from rolehop.i18n import _
 from rolehop.shellrc import find_any_block, find_block
 
 MD_BEGIN = "<!-- >>> rolehop (managed by rolehop, do not edit) >>> -->"
@@ -48,7 +49,6 @@ class Agent:
     rules_mode: str = "block"           # "file" (dedicated file) | "block" (block in a shared file) | "ui"
     frontmatter: str = ""
     hooks: str | None = None            # "claude" | "codex" | "copilot" | "gemini" | "qwen"
-    notes: list[str] = field(default_factory=list)
 
     def detected(self, home: Path) -> bool:
         return any(shutil.which(b) for b in self.binaries) or any((home / d).is_dir() for d in self.config_dirs)
@@ -56,26 +56,36 @@ class Agent:
 
 AGENTS: dict[str, Agent] = {a.key: a for a in [
     Agent("claude", "Claude Code", ("claude",), (".claude",), ".claude/rules/aws.md", "file", hooks="claude"),
-    Agent("codex", "OpenAI Codex CLI", ("codex",), (".codex",), ".codex/AGENTS.md", hooks="codex",
-          notes=["Codex asks you to trust new hooks: open Codex and approve them with /hooks."]),
+    Agent("codex", "OpenAI Codex CLI", ("codex",), (".codex",), ".codex/AGENTS.md", hooks="codex"),
     Agent("kiro", "Kiro (CLI and IDE)", ("kiro-cli", "kiro"), (".kiro",), ".kiro/steering/aws.md", "file",
-          frontmatter="---\ninclusion: always\n---\n\n",
-          notes=["Kiro: rules only (steering). Its post-shell hooks do not reliably deliver command output."]),
+          frontmatter="---\ninclusion: always\n---\n\n"),
     Agent("copilot", "GitHub Copilot CLI", ("copilot",), (".copilot",), ".copilot/copilot-instructions.md",
           hooks="copilot"),
     Agent("gemini", "Gemini CLI", ("gemini",), (".gemini",), ".gemini/GEMINI.md", hooks="gemini"),
     Agent("qwen", "Qwen Code", ("qwen",), (".qwen",), ".qwen/QWEN.md", hooks="qwen"),
-    Agent("opencode", "OpenCode", ("opencode",), (".config/opencode",), ".config/opencode/AGENTS.md",
-          notes=["OpenCode: if you had no ~/.config/opencode/AGENTS.md, it will stop falling back to "
-                 "~/.claude/CLAUDE.md. Copy anything you need from CLAUDE.md into it."]),
+    Agent("opencode", "OpenCode", ("opencode",), (".config/opencode",), ".config/opencode/AGENTS.md"),
     Agent("amp", "Amp", ("amp",), (".config/amp",), ".config/amp/AGENTS.md"),
     Agent("pi", "Pi", ("pi",), (".pi/agent",), ".pi/agent/AGENTS.md"),
     Agent("devin", "Devin Desktop / Windsurf", ("devin", "windsurf"), (".devin", ".codeium/windsurf"),
           ".devin/global_rules.md"),
-    Agent("cursor", "Cursor", ("cursor-agent", "cursor"), (".cursor",), None, "ui",
-          notes=["Cursor has no global rules file: paste the output of `rolehop agent rules` into Settings → Rules. "
-                 "Cursor also runs Claude Code hooks if you have them installed."]),
+    Agent("cursor", "Cursor", ("cursor-agent", "cursor"), (".cursor",), None, "ui"),
 ]}
+
+
+def notes(agent: Agent) -> list[str]:
+    """Extra steps the user must take after installing for an agent (translated when shown, not at import)."""
+    if agent.key == "codex":
+        return [_("Codex: new hooks run only after you approve them. Open Codex and type /hooks.")]
+    if agent.key == "kiro":
+        return [_("Kiro: rules only (steering), no hooks. Kiro's post-command hooks do not reliably "
+                  "receive command output.")]
+    if agent.key == "opencode":
+        return [_("OpenCode: if ~/.config/opencode/AGENTS.md did not exist before, OpenCode stops reading "
+                  "~/.claude/CLAUDE.md as a fallback. Copy anything you still need from CLAUDE.md into it.")]
+    if agent.key == "cursor":
+        return [_("Cursor: run `rolehop agent rules` and paste the output into Cursor Settings → Rules. "
+                  "Cursor also runs the Claude Code hooks when they are installed.")]
+    return []
 
 
 def rules_text() -> str:
@@ -104,27 +114,35 @@ class Changes:
     def write(self, path: Path, text: str, label: str) -> None:
         target = path.resolve() if path.is_symlink() else path
         if target.exists() and target.read_text(encoding="utf-8") == text:
-            self.lines.append(f"✓ {label}: already up to date ({path})")
+            self.lines.append("✓ " + _("{label}: already up to date ({path})", label=label, path=path))
             return
         if self.dry_run:
-            self.lines.append(f"[dry-run] {label}: would write {path}")
+            self.lines.append("[dry-run] " + _("{label}: would write {path}", label=label, path=path))
             return
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and target not in self._backed:
+        existed = target.exists()
+        backup: Path | None = None
+        if existed and target not in self._backed:
             backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
             shutil.copy2(target, backup)
             self._backed.add(target)
         target.write_text(text, encoding="utf-8")
-        self.lines.append(f"✓ {label}: {path}")
+        if backup is not None:
+            self.lines.append("✓ " + _("{label}: updated {path} (backup: {backup})",
+                                       label=label, path=path, backup=backup.name))
+        elif existed:
+            self.lines.append("✓ " + _("{label}: updated {path}", label=label, path=path))
+        else:
+            self.lines.append("✓ " + _("{label}: created {path}", label=label, path=path))
 
     def remove(self, path: Path, label: str) -> None:
         if not path.exists():
             return
         if self.dry_run:
-            self.lines.append(f"[dry-run] {label}: would remove {path}")
+            self.lines.append("[dry-run] " + _("{label}: would remove {path}", label=label, path=path))
             return
         path.unlink()
-        self.lines.append(f"✓ {label}: removed {path}")
+        self.lines.append("✓ " + _("{label}: removed {path}", label=label, path=path))
 
 
 def _with_block(current: str, body: str) -> str:
@@ -165,7 +183,7 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
     data = json.loads(text)  # ValueError if malformed: the caller warns and changes nothing
     if not isinstance(data, dict):
-        raise ValueError("not a JSON object")
+        raise ValueError(_("not a JSON object"))
     return data
 
 
@@ -230,13 +248,15 @@ def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
             "PostToolUse": [{"type": "command", "bash": _hook_cmd("copilot"), "timeoutSec": 15}],
             "PostToolUseFailure": [{"type": "command", "bash": _hook_cmd("copilot"), "timeoutSec": 15}],
         }}
-        ch.write(path, json.dumps(data, indent=2) + "\n", f"{agent.name} hooks")
-        ch.remove(path.with_name("awsorg.json"), f"{agent.name} legacy hooks (awsorg)")
+        ch.write(path, json.dumps(data, indent=2) + "\n", _("{agent} hooks", agent=agent.name))
+        ch.remove(path.with_name("awsorg.json"), _("{agent} legacy hooks (awsorg)", agent=agent.name))
         return
     try:
         data = _read_json(path)
     except ValueError as exc:
-        ch.lines.append(f"✗ {agent.name}: {path} is not valid JSON ({exc}); leaving its hooks untouched.")
+        ch.lines.append("✗ " + _("{agent}: {path} is not valid JSON ({error}). Hooks not installed. "
+                                 "Fix the file, then run: rolehop agent install {key}",
+                                 agent=agent.name, path=path, error=exc, key=agent.key))
         return
     if fmt == "claude":
         _merge_nested_hooks(data, "PostToolUse", "Bash", _hook_cmd("claude"))
@@ -254,44 +274,47 @@ def install_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     elif fmt == "qwen":
         _merge_nested_hooks(data, "PostToolUse", "^run_shell_command$", _hook_cmd("qwen"))
         _merge_nested_hooks(data, "PostToolUseFailure", "^run_shell_command$", _hook_cmd("qwen"))
-    ch.write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", f"{agent.name} hooks")
+    ch.write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", _("{agent} hooks", agent=agent.name))
 
 
 def uninstall_hooks(agent: Agent, home: Path, ch: Changes) -> None:
     path = _hooks_target(agent, home)
     if agent.hooks == "copilot":
-        ch.remove(path, f"{agent.name} hooks")
-        ch.remove(path.with_name("awsorg.json"), f"{agent.name} legacy hooks (awsorg)")
+        ch.remove(path, _("{agent} hooks", agent=agent.name))
+        ch.remove(path.with_name("awsorg.json"), _("{agent} legacy hooks (awsorg)", agent=agent.name))
         return
     try:
         data = _read_json(path)
-    except ValueError:
-        ch.lines.append(f"✗ {agent.name}: {path} is not valid JSON; leaving it untouched.")
+    except ValueError as exc:
+        ch.lines.append("✗ " + _("{agent}: {path} is not valid JSON ({error}). Hooks not removed. "
+                                 "Fix the file, then run: rolehop agent uninstall {key}",
+                                 agent=agent.name, path=path, error=exc, key=agent.key))
         return
     if not data:
         return
     data = _strip_nested_hooks(data)
     if agent.hooks == "claude" and isinstance(data.get("permissions", {}).get("deny"), list):
         data["permissions"]["deny"] = [r for r in data["permissions"]["deny"] if r not in CLAUDE_DENY + LEGACY_DENY]
-    ch.write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", f"{agent.name} hooks")
+    ch.write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n", _("{agent} hooks", agent=agent.name))
 
 
 # --------------------------------------------------------------------------- install / uninstall
 def install(agent: Agent, home: Path, ch: Changes, with_hooks: bool = True) -> None:
     if agent.rules_mode == "ui":
-        ch.lines.append(f"! {agent.name}: no global rules file.")
+        ch.lines.append("! " + _("{agent}: no global rules file; add the rules by hand (see below).",
+                                 agent=agent.name))
     else:
         assert agent.rules_path is not None  # every non-UI agent has a rules file
         path = home / agent.rules_path
         if agent.rules_mode == "file":
-            ch.write(path, agent.frontmatter + rules_text(), f"{agent.name} rules")
+            ch.write(path, agent.frontmatter + rules_text(), _("{agent} rules", agent=agent.name))
         else:
             target = path.resolve() if path.is_symlink() else path
             current = target.read_text(encoding="utf-8") if target.exists() else ""
-            ch.write(path, _with_block(current, rules_text()), f"{agent.name} rules")
+            ch.write(path, _with_block(current, rules_text()), _("{agent} rules", agent=agent.name))
     if with_hooks and agent.hooks:
         install_hooks(agent, home, ch)
-    for note in agent.notes:
+    for note in notes(agent):
         ch.lines.append(f"! {note}")
 
 
@@ -299,13 +322,13 @@ def uninstall(agent: Agent, home: Path, ch: Changes) -> None:
     if agent.rules_path:
         path = home / agent.rules_path
         if agent.rules_mode == "file":
-            ch.remove(path, f"{agent.name} rules")
+            ch.remove(path, _("{agent} rules", agent=agent.name))
         elif path.exists():
             new = _without_block(path.read_text(encoding="utf-8"))
             if new:
-                ch.write(path, new, f"{agent.name} rules")
+                ch.write(path, new, _("{agent} rules", agent=agent.name))
             else:
-                ch.remove(path, f"{agent.name} rules")
+                ch.remove(path, _("{agent} rules", agent=agent.name))
     if agent.hooks:
         uninstall_hooks(agent, home, ch)
 
@@ -327,6 +350,7 @@ def resolve(names: list[str], use_all: bool, home: Path) -> list[Agent]:
     if names:
         unknown = [n for n in names if n not in AGENTS]
         if unknown:
-            raise KeyError(f"unknown agent: {', '.join(unknown)}. Available: {', '.join(AGENTS)}")
+            raise KeyError(_("unknown agent: {names}. Available: {available}",
+                             names=", ".join(unknown), available=", ".join(AGENTS)))
         return [AGENTS[n] for n in names]
     return [a for a in AGENTS.values() if a.detected(home)]

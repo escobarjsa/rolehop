@@ -90,6 +90,15 @@ def item(kind: str, name: str, detail: str, fix: str = "", *, width: int = 0, er
         print(f"{' ' * (pad + 4)}{paint(symbol('next', stream) + ' ' + fix, 'next', stream)}", file=stream)
 
 
+def short(path: object) -> str:
+    """Show a path with ~ for the home directory, as users type it."""
+    text = str(path)
+    home = os.path.expanduser("~")
+    if home and home != "/" and (text == home or text.startswith(home + os.sep)):
+        return "~" + text[len(home):]
+    return text
+
+
 def hint(text: str, *, err: bool = False) -> None:
     """Secondary, dimmed line (a tip, never required to act on)."""
     stream = sys.stderr if err else sys.stdout

@@ -20,10 +20,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from rolehop import __version__
+from rolehop import __version__, ui
+from rolehop.i18n import _
 
 REPO = "escobarjsa/rolehop"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 USER_AGENT = f"rolehop/{__version__}"
 
 
@@ -37,7 +39,6 @@ def _parse(version: str) -> tuple[int, ...]:
 
 
 def _get(url: str, accept: str = "application/octet-stream") -> bytes:
-    from rolehop import ui
     ui.debug(f"GET {url}")
     req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -75,17 +76,20 @@ def download_verified(rel: dict, dest: Path) -> Path:
             if len(parts) == 2 and parts[1].lstrip("*") == rel["wheel_name"]:
                 expected["SHA256SUMS"] = parts[0].lower()
     if not expected:
-        raise VerificationError("the release publishes no checksum for the wheel; refusing to install it")
+        raise VerificationError(_("the release publishes no checksum for the wheel; refusing to install it"))
     if len(set(expected.values())) > 1:
-        raise VerificationError("the GitHub asset digest and SHA256SUMS disagree")
+        raise VerificationError(_("the GitHub asset digest and SHA256SUMS disagree"))
     data = _get(rel["wheel"])
     actual = hashlib.sha256(data).hexdigest()
     want = next(iter(expected.values()))
     if actual != want:
-        raise VerificationError(f"checksum mismatch for {rel['wheel_name']}: expected {want}, got {actual}")
+        raise VerificationError(_("checksum mismatch for {name}: expected {expected}, got {actual}",
+                                  name=rel["wheel_name"], expected=want, actual=actual))
     path = dest / rel["wheel_name"]  # keep the original name: installers require a valid wheel file name
     path.write_bytes(data)
-    print(f"✓ Verified {rel['wheel_name']} (sha256 {actual[:12]}…, {' + '.join(expected)})")
+    labels = {"GitHub asset digest": _("GitHub asset digest"), "SHA256SUMS": "SHA256SUMS"}
+    ui.echo("✓ " + _("Verified {name} (sha256 {digest}…, {sources})", name=rel["wheel_name"], digest=actual[:12],
+                     sources=" + ".join(labels[k] for k in expected)))
     return path
 
 
@@ -108,63 +112,76 @@ def upgrade_command(source: str, tool: str | None) -> list[str] | None:
     return None
 
 
+def _retry_hint() -> None:
+    ui.echo("→ " + _("try again later, or download it from {url}", url=RELEASES_PAGE), err=True)
+
+
 def cmd_upgrade(args) -> int:
     try:
         rel = latest_release()
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            print(f"✗ {REPO} has no published releases on GitHub yet.", file=sys.stderr)
-        else:
-            print(f"✗ GitHub returned {exc.code} when fetching releases.", file=sys.stderr)
+            ui.echo("✗ " + _("{repo} has no published releases on GitHub yet.", repo=REPO), err=True)
+            return 1
+        ui.echo("✗ " + _("GitHub returned HTTP {code} when fetching releases.", code=exc.code), err=True)
+        _retry_hint()
         return 1
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        print(f"✗ Could not fetch releases from GitHub: {exc}", file=sys.stderr)
+        ui.echo("✗ " + _("Could not fetch releases from GitHub: {error}", error=exc), err=True)
+        _retry_hint()
         return 1
     if not rel["tag"]:
-        print("✗ GitHub returned no release.", file=sys.stderr)
+        ui.echo("✗ " + _("GitHub returned no release."), err=True)
+        _retry_hint()
         return 1
     current, latest = _parse(__version__), _parse(rel["version"])
     if latest <= current and not args.force:
-        print(f"✓ rolehop {__version__} is already the latest version ({rel['tag']}).")
+        ui.echo("✓ " + _("rolehop {version} is already the latest version ({tag}).", version=__version__, tag=rel["tag"]))
         return 0
-    print(f"→ New version available: {__version__} → {rel['version']}  {rel['url']}")
+    ui.echo(_("New version available: {latest} (installed: {current}). Release notes: {url}",
+              latest=rel["version"], current=__version__, url=rel["url"]))
     tool = installer()
     git_source = f"git+https://github.com/{REPO}@{rel['tag']}"
     if args.check or tool is None:
         source = rel["wheel"] or git_source
         cmd = upgrade_command(source, tool)
         if cmd is None:
-            print("  Could not determine how rolehop was installed. Upgrade manually with:\n"
-                  f"    uv tool install --force {source}")
+            ui.echo("! " + _("Could not detect the installer (uv or pipx), so the upgrade cannot run automatically."))
+            ui.echo("→ " + _("run: {cmd}", cmd=f"uv tool install --force {source}"))
             return 0 if args.check else 1
-        print(f"  To upgrade: rolehop upgrade   (installs {rel['wheel_name'] or rel['tag']} after verifying its checksum)")
+        ui.echo("→ " + _("run: {cmd}", cmd="rolehop upgrade"))
+        ui.hint("  " + _("It installs {name} after verifying its checksum.", name=rel["wheel_name"] or rel["tag"]))
         return 0
     with tempfile.TemporaryDirectory(prefix="rolehop-upgrade-") as tmp:
         if rel["wheel"]:
             try:
                 source = str(download_verified(rel, Path(tmp)))
             except VerificationError as exc:
-                print(f"✗ Not upgrading: {exc}.", file=sys.stderr)
+                ui.echo("✗ " + _("Not upgrading: {reason}.", reason=exc), err=True)
+                ui.echo("→ " + _("do not install this release by hand; report it at {url}",
+                                 url=f"https://github.com/{REPO}/issues"), err=True)
                 return 1
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                print(f"✗ Could not download the release: {exc}", file=sys.stderr)
+                ui.echo("✗ " + _("Could not download the release: {error}", error=exc), err=True)
+                _retry_hint()
                 return 1
         else:
             source = git_source  # no wheel attached: let the installer fetch the tag from GitHub
         cmd = upgrade_command(source, tool)
         if cmd is None:
-            print(f"✗ {tool} is not on PATH. Upgrade manually with: uv tool install --force {rel['wheel'] or git_source}",
-                  file=sys.stderr)
+            ui.echo("✗ " + _("{tool} is not on PATH, so the upgrade cannot run automatically.", tool=tool), err=True)
+            ui.echo("→ " + _("run: {cmd}", cmd=f"uv tool install --force {rel['wheel'] or git_source}"), err=True)
             return 1
-        print(f"→ {' '.join(cmd)}")
+        ui.echo(_("Running: {cmd}", cmd=" ".join(cmd)))
         rc = subprocess.run(cmd).returncode
     if rc == 0:
-        print(f"✓ Upgraded to {rel['version']}. If the agent integration changed, run: rolehop agent install")
+        ui.echo("✓ " + _("Upgraded to {version}.", version=rel["version"]))
+        ui.hint(_("If the agent integration changed, run: {cmd}", cmd="rolehop agent install"))
     return rc
 
 
 def register(sub) -> None:
-    s = sub.add_parser("upgrade", help="upgrade rolehop to the latest GitHub release (checksum-verified)")
-    s.add_argument("--check", action="store_true", help="only check whether a new version is available")
-    s.add_argument("--force", action="store_true", help="reinstall even if already on the latest version")
+    s = sub.add_parser("upgrade", help=_("upgrade to the latest GitHub release (checksum-verified)"))
+    s.add_argument("--check", action="store_true", help=_("only check whether a new version is available"))
+    s.add_argument("--force", action="store_true", help=_("reinstall even if already on the latest version"))
     s.set_defaults(func=cmd_upgrade)

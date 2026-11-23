@@ -10,6 +10,7 @@ import argparse
 import sys
 
 from rolehop import config, errors
+from rolehop.i18n import _
 
 # Positional completions per subcommand: kind passed to `rolehop _complete`.
 DYNAMIC = {
@@ -59,7 +60,7 @@ def names(kind: str) -> list[str]:
 def bash_script(parser: argparse.ArgumentParser) -> str:
     sp = spec(parser)
     cases = []
-    for name, (_, flags) in sp.items():
+    for name, (_help, flags) in sp.items():
         dyn = DYNAMIC.get(name, "")
         cases.append(f'    {name}) opts="{" ".join(flags)}"; dyn="{dyn}" ;;')
     return f"""# rolehop completion for bash. Load it with: eval "$(rolehop completion bash)"
@@ -128,7 +129,7 @@ def cmd_complete(args) -> int:
 
 
 def register(sub) -> None:
-    s = sub.add_parser("completion", help="print a shell completion script (bash, zsh, fish)")
+    s = sub.add_parser("completion", help=_("print a shell completion script (bash, zsh, fish)"))
     s.add_argument("shell", choices=["bash", "zsh", "fish"])
     s.set_defaults(func=cmd_completion)
     s = sub.add_parser("_complete")

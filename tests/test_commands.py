@@ -303,7 +303,7 @@ def test_doctor_reports_and_fixes(sample, no_agents, monkeypatch, capsys):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
     assert cli_.main(["doctor"]) == 0
     out = capsys.readouterr().out
-    assert "✓ aws-cli          2.30.1" in out and "out of date" in out and "run: rolehop sync" in out
+    assert "aws-cli" in out and "2.30.1" in out and "out of date" in out and "run: rolehop sync" in out
     assert "AWS_ACCESS_KEY_ID" in out and "run: rolehop login acme" in out and "no AI coding agents detected" in out
     assert "AKIAEXAMPLE" not in out  # never echo secrets
     assert cli_.main(["sync", "--quiet"]) == 0

@@ -8,6 +8,7 @@ import re
 import shutil
 
 from rolehop import config, errors, paths, ui
+from rolehop.i18n import _
 
 MARK_NAMES = f"(?:rolehop|{paths.LEGACY_NAME})"  # block marker names accepted when reading ~/.aws/config
 
@@ -61,18 +62,21 @@ def split_blocks(text: str) -> tuple[str, dict[str, str]]:
 
     def repl(m: re.Match) -> str:
         if m["org"] in blocks:
-            raise errors.ConfigError(f"Block rolehop:{m['org']} appears twice in {paths.AWS_CONFIG}. "
-                              f"Keep only one (back up the file first) and try again.")
+            raise errors.ConfigError(_("Block rolehop:{org} appears twice in {path}. "
+                                       "Keep only one (back up the file first) and try again.",
+                                       org=m["org"], path=paths.AWS_CONFIG))
         blocks[m["org"]] = m.group(0).rstrip("\n")
         return f"\0ROLEHOP:{m['org']}\0\n"
 
     if "\0" in text:
-        raise errors.ConfigError(f"{paths.AWS_CONFIG} contains null bytes: check it or restore a .bak backup.")
+        raise errors.ConfigError(_("{path} contains null bytes: check it or restore a .bak backup.",
+                                   path=paths.AWS_CONFIG))
     free = pattern.sub(repl, text)
     leftover = re.findall(rf"^# (?:>>>|<<<) {MARK_NAMES}:([a-z0-9_-]+)", free, re.M)
     if leftover:
-        raise errors.ConfigError(f"Incomplete or tampered rolehop markers for: {', '.join(sorted(set(leftover)))} "
-                          f"in {paths.AWS_CONFIG}. Fix or remove that block by hand (back up the file first).")
+        raise errors.ConfigError(_("Incomplete or tampered block markers for {orgs} in {path}. "
+                                   "Fix or remove that block by hand (back up the file first).",
+                                   orgs=", ".join(sorted(set(leftover))), path=paths.AWS_CONFIG))
     return free, blocks
 
 
@@ -153,12 +157,13 @@ def plan_sync(orgs: list[dict], current: str, prune: bool = False,
             new_free = new_free.replace(token, blocks[name] + "\n", 1)
             kept.append(name)
     if "\0" in new_free:
-        raise errors.ConfigError("internal error: the result contains unresolved placeholders. Nothing was written.")
+        raise errors.ConfigError(_("internal error: the result contains unresolved placeholders. Nothing was written."))
     import configparser
     try:
         configparser.RawConfigParser(strict=True, interpolation=None).read_string(new_free)
     except configparser.Error as exc:
-        raise errors.ConfigError(f"the result would not be a valid ~/.aws/config; nothing was written: {exc}") from None
+        raise errors.ConfigError(_("the result would not be a valid {path}; nothing was written: {error}",
+                                   path=paths.AWS_CONFIG, error=exc)) from None
     return new_free, kept, {}
 
 
@@ -170,7 +175,8 @@ def write_aws_config(text: str) -> None:
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
         os.chmod(backup, 0o600)
-        print(f"\n✓ Backup: {backup}")
+        ui.echo()
+        ui.echo("✓ " + _("Backup: {path}", path=backup))
     ui.debug(f"writing {target} atomically (mode 0600)")
     tmp = target.with_name(target.name + ".rolehop-tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

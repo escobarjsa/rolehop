@@ -40,13 +40,14 @@ def write_state(org: str, **values) -> None:
 def check_org(org: dict) -> dict:
     """Check an org's session with `aws sts get-caller-identity` on its probe profile."""
     prof = config.probe_profile(org)
-    res = {"org": org["name"], "probe_profile": prof, "ok": False, "expired": False,
+    # "error" is the raw English detail (kept for --json); "code" is stable for programs and for translation.
+    res = {"org": org["name"], "probe_profile": prof, "ok": False, "expired": False, "code": None,
            "account": None, "arn": None, "error": None}
     if not prof:
-        res["error"] = "no profiles defined"
+        res["error"], res["code"] = "no profiles defined", "no_profiles"
         return res
     if not awsconfig.profile_exists(prof):  # orgs.toml has the org but `rolehop sync` has not written it yet
-        res["error"] = f"profile {prof} is not in {paths.AWS_CONFIG}"
+        res["error"], res["code"] = f"profile {prof} is not in {paths.AWS_CONFIG}", "needs_sync"
         res["needs_sync"] = True
         return res
     try:
@@ -55,21 +56,21 @@ def check_org(org: dict) -> dict:
                            capture_output=True, text=True, timeout=30)
         ui.debug(f"  exit {p.returncode}")
     except FileNotFoundError:
-        res["error"] = "aws command not found"
+        res["error"], res["code"] = "aws command not found", "aws_missing"
         return res
     except subprocess.TimeoutExpired:
-        res["error"] = "timed out calling STS"
+        res["error"], res["code"] = "timed out calling STS", "timeout"
         return res
     if p.returncode == 0:
         try:
             info = json.loads(p.stdout)
             res.update(ok=True, account=info.get("Account"), arn=info.get("Arn"))
         except ValueError:
-            res["error"] = "unexpected response from aws sts (not JSON)"
+            res["error"], res["code"] = "unexpected response from aws sts (not JSON)", "bad_response"
     else:
         err = (p.stderr or p.stdout).strip().splitlines()
         msg = next((line for line in err if line.strip()), "unknown error")
-        res["error"] = msg[:200]
+        res["error"], res["code"] = msg[:200], "aws_error"
         res["expired"] = bool(EXPIRED_RE.search(p.stderr or ""))
         res["needs_sync"] = bool(NOT_FOUND_RE.search(p.stderr or ""))
     st = read_state(org["name"])

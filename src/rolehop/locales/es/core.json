@@ -1,5 +1,6 @@
 {
   "--lang option": "opción --lang",
+  "AWS STS did not answer in time": "AWS STS no respondió a tiempo",
   "Available: {list}. Change it with: rolehop language <code>  (auto = follow the system)": "Disponibles: {list}. Cámbialo con: rolehop language <code>  (auto = seguir al sistema)",
   "Language set to {name} ({code}).": "Idioma cambiado a {name} ({code}).",
   "Language: {name} ({code}), from {source}.": "Idioma: {name} ({code}), según {source}.",
@@ -15,7 +16,11 @@
   "session expired": "la sesión expiró",
   "show or change the language (en, es, pt)": "muestra o cambia el idioma (en, es, pt)",
   "system locale": "idioma del sistema",
+  "the aws command was not found": "no se encontró el comando aws",
+  "this organization has no profiles in orgs.toml": "esta organización no tiene perfiles en orgs.toml",
   "time left unknown": "tiempo restante desconocido",
+  "try again, or check your network with: {cmd}": "inténtalo de nuevo o revisa tu red con: {cmd}",
+  "unexpected answer from aws sts": "respuesta inesperada de aws sts",
   "{ready} of {total} organizations ready.": "{ready} de {total} organizaciones listas.",
   "~{time} left (estimated)": "quedan ~{time} (estimado)"
 }

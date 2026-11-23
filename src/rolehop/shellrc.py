@@ -7,6 +7,8 @@ import os
 import shutil
 from pathlib import Path
 
+from rolehop.i18n import _
+
 MARK_BEGIN = "# >>> rolehop (managed by rolehop setup) >>>"
 MARK_END = "# <<< rolehop <<<"
 # Markers written by older versions: recognized, replaced on setup and removed on uninstall.
@@ -105,21 +107,30 @@ def ensure_shell_integration(dry_run: bool = False, home: Path | None = None, sh
         while (old := find_block(new, legacy_begin, legacy_end)) is not None:
             new = new[:old[0]].rstrip("\n") + "\n" + new[old[1]:].lstrip("\n")
     if new == current:
-        msgs.append(f"✓ {rc} already has ~/.local/bin on PATH" + (" and direnv" if has_direnv else ""))
+        if has_direnv:
+            msgs.append("✓ " + _("{rc} already has ~/.local/bin on PATH and the direnv hook", rc=rc))
+        else:
+            msgs.append("✓ " + _("{rc} already has ~/.local/bin on PATH", rc=rc))
         return msgs
     if dry_run:
-        msgs.append(f"[dry-run] would add to {rc}: ~/.local/bin on PATH" + (" + direnv hook" if add_direnv else ""))
+        if add_direnv:
+            msgs.append("[dry-run] " + _("would add to {rc}: ~/.local/bin on PATH and the direnv hook", rc=rc))
+        else:
+            msgs.append("[dry-run] " + _("would add to {rc}: ~/.local/bin on PATH", rc=rc))
         return msgs
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
-        msgs.append(f"✓ backup: {backup}")
+        msgs.append("✓ " + _("backup saved: {path}", path=backup))
     target.write_text(new)
-    msgs.append(f"✓ {rc}: ~/.local/bin on PATH" + (" and direnv hook" if add_direnv else ""))
+    if add_direnv:
+        msgs.append("✓ " + _("{rc}: added ~/.local/bin to PATH and the direnv hook", rc=rc))
+    else:
+        msgs.append("✓ " + _("{rc}: added ~/.local/bin to PATH", rc=rc))
     on_path = any(str(d) in os.environ.get("PATH", "").split(os.pathsep) for d in bin_dirs())
     if not on_path:
-        msgs.append(f"! Open a new terminal (or run: exec {shell}) for the PATH change to take effect.")
+        msgs.append("! " + _("The PATH change applies to new terminals. Open one, or run: exec {shell}", shell=shell))
     return msgs
 
 
@@ -143,5 +154,5 @@ def remove_shell_integration(home: Path | None = None) -> list[str]:
         backup = target.with_name(f"{target.name}.bak-{dt.datetime.now():%Y%m%d-%H%M%S}")
         shutil.copy2(target, backup)
         target.write_text(new)
-        msgs.append(f"✓ {rc}: rolehop block removed (backup: {backup.name})")
+        msgs.append("✓ " + _("{rc}: removed the block added by rolehop (backup: {backup})", rc=rc, backup=backup.name))
     return msgs

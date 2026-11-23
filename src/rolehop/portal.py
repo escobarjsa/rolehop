@@ -8,6 +8,15 @@ import os
 import subprocess
 
 from rolehop import errors, paths, session, ui
+from rolehop.i18n import _
+
+
+class LoginNeeded(errors.PortalError):
+    """The SSO session is missing or expired. ``str()`` adds the command that fixes it; ``reason`` omits it."""
+
+    def __init__(self, reason: str, org: str | None = None) -> None:
+        self.reason = reason
+        super().__init__(f"{reason}; " + _("run: {cmd}", cmd=f"rolehop login {org}" if org else "rolehop login"))
 
 
 def cached_token(session_name: str) -> str:
@@ -17,14 +26,14 @@ def cached_token(session_name: str) -> str:
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
-        raise errors.PortalError(f"no active session for '{session_name}' (run: rolehop login {session_name})") from None
+        raise LoginNeeded(_("no active session for '{org}'", org=session_name), session_name) from None
     token, expires = data.get("accessToken"), data.get("expiresAt", "")
     if not token:
-        raise errors.PortalError(f"SSO cache has no token for '{session_name}'")
+        raise LoginNeeded(_("the SSO cache has no token for '{org}'", org=session_name), session_name)
     try:
         exp = dt.datetime.fromisoformat(expires.replace("Z", "+00:00").replace("UTC", "+00:00"))
         if exp <= dt.datetime.now(dt.UTC):
-            raise errors.PortalError(f"the token for '{session_name}' has expired (run: rolehop login {session_name})")
+            raise LoginNeeded(_("the token for '{org}' has expired", org=session_name), session_name)
     except ValueError:
         pass
     return token
@@ -43,10 +52,10 @@ def portal_get(region: str, path: str, token: str, params: dict) -> dict:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise errors.PortalError("the portal rejected the token (session expired); run: rolehop login") from None
-        raise errors.PortalError(f"HTTP error {exc.code} from the SSO portal") from None
+            raise LoginNeeded(_("the portal rejected the token (the session expired)")) from None
+        raise errors.PortalError(_("HTTP error {code} from the SSO portal", code=exc.code)) from None
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        raise errors.PortalError(f"could not reach the SSO portal: {exc}") from None
+        raise errors.PortalError(_("could not reach the SSO portal: {error}", error=exc)) from None
 
 
 def portal_inventory(session_name: str, region: str) -> list[dict]:
@@ -86,7 +95,8 @@ def login_for_discovery(org: dict) -> bool:
         cmd = ["aws", "sso", "login", "--sso-session", org["name"]]
         if org.get("login_flow", "device") == "device":
             cmd.append("--use-device-code")
-        print(f"  → {' '.join(cmd)}  (approve in your browser)")
+        ui.echo("  " + _("Running: {cmd}", cmd=" ".join(cmd)))
+        ui.hint("  " + _("Approve the request in your browser."))
         rc = subprocess.run(cmd, env=os.environ | {"AWS_CONFIG_FILE": tmp}).returncode
     finally:
         os.unlink(tmp)
