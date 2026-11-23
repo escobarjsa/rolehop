@@ -41,6 +41,7 @@ if sys.version_info < (3, 11):  # noqa: UP036 - clear message when run on an old
 
 from rolehop import __version__ as VERSION  # noqa: E402
 from rolehop import awsconfig, config, errors, paths, portal, session, ui, wizard  # noqa: E402
+from rolehop.i18n import _  # noqa: E402
 
 
 def cmd_sync(args) -> int:
@@ -76,22 +77,57 @@ def cmd_sync(args) -> int:
     return 0
 
 
+def status_line(r: dict) -> tuple[str, str, str]:
+    """(kind, detail, fix) for one org's session check, shared by `status` and `doctor`."""
+    org = r["org"]
+    if r["ok"]:
+        return "ok", _("active · {left} · account {account}", left=session.fmt_left(r.get("estimated_left_min")),
+                       account=r.get("account") or "?"), ""
+    if r.get("needs_sync"):
+        return "error", _("profiles are not in {path} yet", path=paths.AWS_CONFIG), _("run: {cmd}", cmd="rolehop sync")
+    if r.get("expired") or r.get("blocked"):
+        return "error", _("session expired"), _("run: {cmd}", cmd=f"rolehop login {org}")
+    if (r.get("error") or "").startswith(("aws command not found", "no profiles defined")):
+        return "error", r["error"], _("run: {cmd}", cmd="rolehop doctor")
+    return "error", _("no session ({reason})", reason=r.get("error") or "?"), _("run: {cmd}", cmd=f"rolehop login {org}")
+
+
 def cmd_status(args) -> int:
     orgs = config.select(config.load_orgs(), args.orgs)
     results = [session.check_org(o) for o in orgs]
     if args.json:
         print(json.dumps(results, indent=2))
-    else:
-        for r in results:
-            if r["ok"]:
-                print(f"✓ {r['org']:<12} active session · account {r['account']} · "
-                      f"{session.fmt_left(r.get('estimated_left_min'))} · checked with {r['probe_profile']}")
-            else:
-                hint = f"run: rolehop login {r['org']}" if r["expired"] else r["error"]
-                print(f"✗ {r['org']:<12} no session · {hint}")
-        if any(r["ok"] for r in results):
-            print("  (Cached role credentials can show ✓ even after the portal session has ended.)")
-    return 0 if all(r["ok"] for r in results) else 1
+        return 0 if all(r["ok"] for r in results) else 1
+    width = max((len(r["org"]) for r in results), default=0)
+    for r in results:
+        kind, detail, fix = status_line(r)
+        ui.item(kind, r["org"], detail, fix, width=width)
+        ui.debug(f"{r['org']}: checked with profile {r.get('probe_profile')}; cached role credentials can show "
+                 "active for a while after the portal session ends")
+    ready = sum(r["ok"] for r in results)
+    if len(results) > 1 and ready < len(results):
+        ui.echo()
+        ui.echo(_("{ready} of {total} organizations ready.", ready=ready, total=len(results)))
+    return 0 if ready == len(results) else 1
+
+
+def cmd_language(args) -> int:
+    from rolehop import i18n
+    if args.code is None:
+        lang, source = i18n.resolve()
+        sources = {"flag": _("--lang option"), "env": "ROLEHOP_LANG", "settings": str(paths.SETTINGS_PATH),
+                   "system": _("system locale"), "default": _("default")}
+        ui.echo(_("Language: {name} ({code}), from {source}.", name=i18n.NAMES[lang], code=lang, source=sources[source]))
+        ui.echo(_("Available: {list}. Change it with: rolehop language <code>  (auto = follow the system)",
+                  list=", ".join(f"{c} ({n})" for c, n in i18n.NAMES.items())))
+        return 0
+    i18n.write_language(None if args.code == "auto" else args.code)
+    i18n.set_language(None)
+    lang, source = i18n.resolve()
+    ui.echo("✓ " + _("Language set to {name} ({code}).", name=i18n.NAMES[lang], code=lang))
+    if args.code != "auto" and source != "settings":
+        ui.echo("! " + _("ROLEHOP_LANG or --lang is overriding it in this shell."))
+    return 0
 
 
 def cmd_login(args) -> int:
@@ -291,7 +327,8 @@ def awslogin_main() -> int:
     return main(["login", *sys.argv[1:]])
 
 
-COMMANDS = "setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,doctor,upgrade,completion,uninstall"
+COMMANDS = ("setup,init,sync,login,status,list,refresh,remove,run,agent,envrc,discover,doctor,language,upgrade,"
+            "completion,uninstall")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -300,7 +337,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="rolehop", description=doc.split("\n\n")[0])
     ap.add_argument("--version", action="version", version=f"rolehop {VERSION}")
     ap.add_argument("-v", "--verbose", action="store_true",
-                    help="print debug details (commands run, files written) to stderr; also ROLEHOP_DEBUG=1")
+                    help=_("print debug details (commands run, files written) to stderr; also ROLEHOP_DEBUG=1"))
+    ap.add_argument("--lang", choices=["en", "es", "pt"],
+                    help=_("language for this run (default: ROLEHOP_LANG, `rolehop language`, then the system locale)"))
+    ap.add_argument("--no-color", action="store_true", help=_("disable colors (also NO_COLOR=1)"))
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="{" + COMMANDS + "}")
 
     s = sub.add_parser("sync", help="write the profiles to ~/.aws/config")
@@ -378,18 +418,37 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("state", choices=["blocked", "clear"])
     s.set_defaults(func=cmd_mark)
 
+    s = sub.add_parser("language", help=_("show or change the language (en, es, pt)"))
+    s.add_argument("code", nargs="?", choices=["en", "es", "pt", "auto"])
+    s.set_defaults(func=cmd_language)
+
     s = sub.add_parser("_which-org")
     s.add_argument("profile")
     s.set_defaults(func=cmd_which_org)
     return ap
 
 
-QUIET_COMMANDS = ("hook", "_mark", "_which-org", "_complete", "completion", "uninstall", "upgrade", "doctor")
+QUIET_COMMANDS = ("hook", "_mark", "_which-org", "_complete", "completion", "uninstall", "upgrade", "doctor", "language")
+
+
+def _preparse_lang(argv: list[str]) -> str | None:
+    """Read --lang before building the parser, so --help itself is translated."""
+    for i, arg in enumerate(argv):
+        if arg == "--lang" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--lang="):
+            return arg.split("=", 1)[1]
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
+    from rolehop import i18n
+    argv = sys.argv[1:] if argv is None else argv
+    i18n.set_language(_preparse_lang(argv))
+    i18n.install_argparse_translations()
     args = build_parser().parse_args(argv)
     ui.set_verbose(args.verbose)
+    ui.set_no_color(args.no_color)
     ui.debug(f"rolehop {VERSION} · config={paths.CONFIG_PATH} · aws_config={paths.AWS_CONFIG} · state={paths.STATE_DIR}")
     if args.cmd not in QUIET_COMMANDS and not getattr(args, "dry_run", False):
         try:

@@ -14,7 +14,7 @@ from rolehop import config, errors
 # Positional completions per subcommand: kind passed to `rolehop _complete`.
 DYNAMIC = {
     "login": "orgs", "status": "orgs", "refresh": "orgs", "discover": "orgs",
-    "remove": "targets", "envrc": "profiles", "agent": "agents", "completion": "shells",
+    "remove": "targets", "envrc": "profiles", "agent": "agents", "completion": "shells", "language": "languages",
 }
 HIDDEN = {"hook", "_mark", "_which-org", "_complete"}
 
@@ -37,6 +37,8 @@ def names(kind: str) -> list[str]:
     """Names to complete for a kind; empty when orgs.toml is missing or invalid."""
     if kind == "shells":
         return ["bash", "zsh", "fish"]
+    if kind == "languages":
+        return ["en", "es", "pt", "auto"]
     if kind == "agents":
         from rolehop import agents
         return ["list", "install", "uninstall", "rules", *agents.AGENTS]
@@ -130,5 +132,5 @@ def register(sub) -> None:
     s.add_argument("shell", choices=["bash", "zsh", "fish"])
     s.set_defaults(func=cmd_completion)
     s = sub.add_parser("_complete")
-    s.add_argument("kind", choices=["orgs", "profiles", "targets", "agents", "shells"])
+    s.add_argument("kind", choices=["orgs", "profiles", "targets", "agents", "shells", "languages"])
     s.set_defaults(func=cmd_complete)

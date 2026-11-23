@@ -66,3 +66,15 @@ def sample(env):
 
 def write(path: Path, text: str) -> None:
     path.write_text(textwrap.dedent(text))
+
+
+@pytest.fixture(autouse=True)
+def english_by_default(monkeypatch):
+    """Tests assert English output regardless of the developer's locale; reset any --lang from a previous test."""
+    monkeypatch.setenv("ROLEHOP_LANG", "en")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    from rolehop import i18n
+    i18n.set_language(None)
+    yield
+    i18n.set_language(None)

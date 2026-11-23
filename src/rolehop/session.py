@@ -8,7 +8,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from rolehop import config, errors, paths, ui
+from rolehop import awsconfig, config, errors, paths, ui
+from rolehop.i18n import _
 
 # Actual AWS CLI / botocore / aws-sdk-go-v2 messages when the SSO session has ended.
 EXPIRED_RE = re.compile(
@@ -16,6 +17,7 @@ EXPIRED_RE = re.compile(
     r"|UnauthorizedSSOToken|Token has expired and refresh failed|refresh cached SSO token failed"
     r"|InvalidGrantException|SSO session.{0,40}(has expired|is invalid)|Error loading SSO Token"
     r"|ExpiredToken")
+NOT_FOUND_RE = re.compile(r"The config profile \(.+?\) could not be found")
 
 
 def state_file(org: str) -> Path:
@@ -43,6 +45,10 @@ def check_org(org: dict) -> dict:
     if not prof:
         res["error"] = "no profiles defined"
         return res
+    if not awsconfig.profile_exists(prof):  # orgs.toml has the org but `rolehop sync` has not written it yet
+        res["error"] = f"profile {prof} is not in {paths.AWS_CONFIG}"
+        res["needs_sync"] = True
+        return res
     try:
         ui.debug(f"$ aws sts get-caller-identity --profile {prof}")
         p = subprocess.run(["aws", "sts", "get-caller-identity", "--profile", prof, "--output", "json"],
@@ -65,6 +71,7 @@ def check_org(org: dict) -> dict:
         msg = next((line for line in err if line.strip()), "unknown error")
         res["error"] = msg[:200]
         res["expired"] = bool(EXPIRED_RE.search(p.stderr or ""))
+        res["needs_sync"] = bool(NOT_FOUND_RE.search(p.stderr or ""))
     st = read_state(org["name"])
     if st.get("last_login"):
         try:
@@ -84,8 +91,8 @@ def check_org(org: dict) -> dict:
 
 def fmt_left(minutes: int | None) -> str:
     if minutes is None:
-        return "no login data"
-    return f"~{minutes // 60}h{minutes % 60:02d}m estimated"
+        return _("time left unknown")
+    return _("~{time} left (estimated)", time=f"{minutes // 60}h{minutes % 60:02d}m")
 
 
 def org_of_profile(profile: str) -> str | None:

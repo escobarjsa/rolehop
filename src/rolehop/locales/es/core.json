@@ -1,0 +1,21 @@
+{
+  "--lang option": "opción --lang",
+  "Available: {list}. Change it with: rolehop language <code>  (auto = follow the system)": "Disponibles: {list}. Cámbialo con: rolehop language <code>  (auto = seguir al sistema)",
+  "Language set to {name} ({code}).": "Idioma cambiado a {name} ({code}).",
+  "Language: {name} ({code}), from {source}.": "Idioma: {name} ({code}), según {source}.",
+  "ROLEHOP_LANG or --lang is overriding it in this shell.": "ROLEHOP_LANG o --lang lo están reemplazando en esta terminal.",
+  "active · {left} · account {account}": "activa · {left} · cuenta {account}",
+  "default": "valor por defecto",
+  "disable colors (also NO_COLOR=1)": "desactiva los colores (también NO_COLOR=1)",
+  "language for this run (default: ROLEHOP_LANG, `rolehop language`, then the system locale)": "idioma para esta ejecución (por defecto: ROLEHOP_LANG, `rolehop language` y luego el idioma del sistema)",
+  "no session ({reason})": "sin sesión ({reason})",
+  "print debug details (commands run, files written) to stderr; also ROLEHOP_DEBUG=1": "muestra detalles de depuración (comandos ejecutados, archivos escritos) en stderr; también ROLEHOP_DEBUG=1",
+  "profiles are not in {path} yet": "los perfiles aún no están en {path}",
+  "run: {cmd}": "ejecuta: {cmd}",
+  "session expired": "la sesión expiró",
+  "show or change the language (en, es, pt)": "muestra o cambia el idioma (en, es, pt)",
+  "system locale": "idioma del sistema",
+  "time left unknown": "tiempo restante desconocido",
+  "{ready} of {total} organizations ready.": "{ready} de {total} organizaciones listas.",
+  "~{time} left (estimated)": "quedan ~{time} (estimado)"
+}

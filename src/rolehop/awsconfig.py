@@ -82,6 +82,15 @@ SECTION_RE = re.compile(r"^\[(?:profile\s+)?(?P<name>[^\]]+?)\]\s*$", re.M)
 SSO_SESSION_RE = re.compile(r"^\[sso-session\s+(?P<name>[^\]]+?)\]\s*$", re.M)
 
 
+def profile_exists(name: str) -> bool:
+    """True if ~/.aws/config defines ``[profile <name>]`` (or ``[default]`` for "default")."""
+    try:
+        text = paths.AWS_CONFIG.read_text()
+    except OSError:
+        return False
+    return any(m["name"].strip() == name for m in SECTION_RE.finditer(text) if not m.group(0).startswith("[sso-session"))
+
+
 def conflicts(free_text: str, org: dict) -> list[str]:
     """Return sections outside managed blocks that would clash with the generated ones."""
     clean = re.sub(r"\0ROLEHOP:[^\0]+\0", "", free_text)
