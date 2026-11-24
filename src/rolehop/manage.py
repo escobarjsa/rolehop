@@ -211,12 +211,8 @@ def plan_refresh(org: dict, inventory: list[dict], prune: bool) -> tuple[dict, l
 
 
 def _read_portal(org: dict) -> list[dict]:
-    """Read the portal inventory with the cached token; on failure, refresh the token with an AWS command and retry."""
-    try:
-        return portal.portal_inventory(org["name"], org["sso_region"])
-    except errors.PortalError:
-        session.check_org(org)  # best effort: the AWS CLI refreshes the cached SSO token if the session is still alive
-        return portal.portal_inventory(org["name"], org["sso_region"])
+    """Read the access-portal inventory, letting the AWS CLI renew an expired token once if needed."""
+    return portal.inventory(org)
 
 
 def cmd_refresh(args) -> int:
@@ -239,7 +235,9 @@ def cmd_refresh(args) -> int:
             reason = exc.reason if isinstance(exc, portal.LoginNeeded) else str(exc)
             ui.echo("✗ " + _("{org}: could not read the access portal ({reason}).", org=org["name"], reason=reason),
                     err=True)
-            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}"), indent=2, err=True)
+            login_needed = isinstance(exc, portal.LoginNeeded)
+            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}" if login_needed else "rolehop doctor"),
+                   indent=2, err=True)
             failed.append(org["name"])
             updated.append(org)
             continue

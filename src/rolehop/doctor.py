@@ -139,6 +139,13 @@ def run_checks(online: bool = False) -> list[Check]:
         try:
             portal.cached_token(name)
             checks.append(Check(f"session:{name}", "ok", _("cached SSO token is valid")))
+        except portal.LoginNeeded as exc:
+            if exc.expired:  # renewed by the AWS CLI on the next call while the portal session lasts
+                checks.append(Check(f"session:{name}", "info",
+                                    _("the access-portal token expired; the AWS CLI renews it on the next call while "
+                                      "the portal session lasts")))
+            else:
+                checks.append(Check(f"session:{name}", "warn", exc.reason, _run(f"rolehop login {name}")))
         except errors.PortalError as exc:
             reason = exc.reason if isinstance(exc, portal.LoginNeeded) else str(exc)
             checks.append(Check(f"session:{name}", "warn", reason, _run(f"rolehop login {name}")))

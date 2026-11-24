@@ -23,7 +23,7 @@ rolehop login
 ```console
 $ rolehop login
 ✓ acme: already has a session (~6h40m estimated). Use --force to renew it.
-→ personal: aws sso login --sso-session personal --use-device-code
+Running: aws sso login --sso-session personal --use-device-code
 ✓ personal: logged in · account 333333333333
 ```
 

@@ -62,9 +62,11 @@ Small, non-secret JSON files in `~/.local/state/rolehop/<org>.json` record the t
 
 ## Discovery
 
-`init` and `discover` read the SSO access token from the AWS CLI cache file (`~/.aws/sso/cache/<sha1(session)>.json`) **in memory**, and call the AWS access portal REST API with the standard library:
+`init`, `discover` and `refresh` read the SSO access token from the AWS CLI cache file (`~/.aws/sso/cache/<sha1(session)>.json`) **in memory**, and call the AWS access portal REST API with the standard library:
 
 - `GET /assignment/accounts` - accounts you can access
 - `GET /assignment/roles` - permission sets per account
 
 The token is never printed, logged or written anywhere.
+
+The access token is shorter-lived than the portal session, and the AWS CLI renews it only when it needs it. If it has expired while role credentials are still cached, rolehop moves the probe role's cached credentials aside so the next STS call makes the CLI renew the token, then reads the portal again.

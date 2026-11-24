@@ -79,6 +79,9 @@ def english_by_default(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("ROLEHOP_SETTINGS", str(settings))
     monkeypatch.delenv("AWSORG_SETTINGS", raising=False)
     monkeypatch.setattr(rolehop.paths, "SETTINGS_PATH", settings)
+    cli_cache = tmp_path_factory.mktemp("cli-cache")  # never touch the real ~/.aws/cli/cache
+    monkeypatch.setenv("ROLEHOP_CLI_CACHE", str(cli_cache))
+    monkeypatch.setattr(rolehop.paths, "CLI_CACHE", cli_cache)
     monkeypatch.setenv("ROLEHOP_LANG", "en")
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)

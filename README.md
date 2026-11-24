@@ -44,7 +44,7 @@ rolehop setup
 Before the PyPI release, install from GitHub - the latest [release](https://github.com/escobarjsa/rolehop/releases) or the main branch:
 
 ```bash
-uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.8.0/rolehop-1.8.0-py3-none-any.whl
+uv tool install https://github.com/escobarjsa/rolehop/releases/download/v1.8.1/rolehop-1.8.1-py3-none-any.whl
 uv tool install git+https://github.com/escobarjsa/rolehop
 ```
 

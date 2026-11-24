@@ -3,7 +3,8 @@
 ## Security model
 
 - **No secrets at rest.** `rolehop` never stores or writes tokens or keys. Login and credential refresh are handled by the AWS CLI and SDKs.
-- **Token in memory only.** `init` and `discover` read the cached SSO token in memory to query the AWS access portal (`portal.sso.<region>.amazonaws.com`) and never print or log it.
+- **Token in memory only.** `init`, `discover` and `refresh` read the cached SSO token in memory to query the AWS access portal (`portal.sso.<region>.amazonaws.com`) and never print or log it.
+- **Token renewal without touching it.** When the access-portal token has expired, rolehop moves one role's cached credentials in `~/.aws/cli/cache` aside so the AWS CLI renews the token itself on the next call, and puts them back if renewal fails. This is the only file rolehop touches in the AWS CLI caches.
 - **No injection.** Every value from `orgs.toml` is validated against strict patterns (names, HTTPS URLs, regions, 12-digit IDs, IAM role ARNs) before anything reaches `~/.aws/config`. Newlines, brackets and comment characters are rejected.
 - **Safe writes.** Validated output is parsed as INI, written atomically with mode `0600`, with a timestamped backup, and only inside `rolehop`'s own blocks.
 - **Least surprise for agents.** Agent rules forbid reading `~/.aws`, exporting keys, using `aws configure export-credentials`, or starting interactive logins. On Claude Code this is enforced with `deny` permission rules.

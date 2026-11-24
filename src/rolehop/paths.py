@@ -43,3 +43,6 @@ def migrate_legacy() -> list[str]:
 
 
 SSO_CACHE = Path(env("SSO_CACHE") or HOME / ".aws/sso/cache")
+# Where the AWS CLI caches role credentials obtained through SSO (one file per account/role/sso-session). The CLI
+# itself has no override for this folder; ROLEHOP_CLI_CACHE exists for tests only.
+CLI_CACHE = Path(env("CLI_CACHE") or HOME / ".aws/cli/cache")

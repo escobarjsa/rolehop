@@ -6,6 +6,7 @@ Start with `rolehop doctor`: it checks the whole installation and prints the com
 |---|---|
 | `✗ <org>  profiles are not in ~/.aws/config yet` | The org is in `orgs.toml` but was never synced: `rolehop sync`. |
 | `✗ <org>  session expired` or `no session` | Run `rolehop login <org>`. |
+| `refresh` or `discover` say *the access-portal token … has expired* | Usually renewed automatically: rolehop lets the AWS CLI renew the token with its refresh token. If you still see it, the portal session has ended: `rolehop login <org>`. |
 | Messages in the wrong language | `rolehop language en` (or `es`, `pt`); check `ROLEHOP_LANG` is not set. |
 | `Token has expired and refresh failed` / `SSO session … expired` | The portal session ended: `rolehop login <org>`. |
 | `command not found: rolehop` or `awslogin` | Open a new terminal, or run `rolehop setup` again to fix `PATH`. |
