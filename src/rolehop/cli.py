@@ -285,11 +285,11 @@ def cmd_envrc(args) -> int:
 def cmd_discover(args) -> int:
     org = config.select(config.load_orgs(), [args.org])[0]
     try:
-        inv = portal.portal_inventory(org["name"], org["sso_region"])
+        inv = portal.inventory(org)
     except errors.PortalError as exc:
-        if isinstance(exc, portal.LoginNeeded):
+        if isinstance(exc, portal.LoginNeeded):  # --force: plain `login` may still see cached role credentials
             ui.echo("✗ " + ui.sentence(exc.reason), err=True)
-            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}"), indent=2, err=True)
+            ui.fix(_("run: {cmd}", cmd=f"rolehop login --force {org['name']}"), indent=2, err=True)
         else:
             ui.echo("✗ " + ui.sentence(str(exc)), err=True)
             ui.fix(_("run: {cmd}", cmd="rolehop doctor"), indent=2, err=True)

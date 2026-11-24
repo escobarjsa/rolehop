@@ -103,3 +103,43 @@ def login_for_discovery(org: dict) -> bool:
     if rc == 0:
         session.write_state(org["name"], last_login=dt.datetime.now(dt.UTC).isoformat(), blocked=False)
     return rc == 0
+
+
+def role_cache_file(org: dict, account_id: str, permission_set: str) -> paths.Path:
+    """The AWS CLI's cached-credentials file for one SSO role, using botocore's cache key for sso-session profiles:
+    sha1 of {"accountId", "roleName", "sessionName"} as compact, sorted JSON."""
+    import hashlib
+    key = json.dumps({"accountId": account_id, "roleName": permission_set, "sessionName": org["name"]},
+                     sort_keys=True, separators=(",", ":"))
+    return paths.CLI_CACHE / (hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest() + ".json")
+
+
+def renew_access_token(org: dict) -> bool:
+    """Make the AWS CLI renew an expired access-portal token with its own refresh token.
+
+    The CLI renews the token only when it needs it, and it does not need it while the probe role's credentials are
+    still cached, so the token can be expired while `rolehop login` reports an active session. Removing that one
+    cached-credentials file (the CLI fetches new ones on demand) forces the next STS call through the SSO token
+    provider, which renews and saves the token itself. rolehop never reads or writes the token for this.
+    """
+    from rolehop import config
+    prof = config.probe_profile(org)
+    row = next((r for r in config.catalog([org]) if r["profile"] == prof and r["type"] == "sso"), None)
+    if row is None:
+        return False
+    cached = role_cache_file(org, row["account_id"], row["permission_set"])
+    ui.debug(f"renewing the access-portal token of {org['name']}: discarding cached role credentials {ui.short(cached)}")
+    try:
+        cached.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return bool(session.check_org(org).get("ok"))
+
+
+def inventory(org: dict) -> list[dict]:
+    """portal_inventory(), renewing an expired access-portal token once through the AWS CLI if needed."""
+    try:
+        return portal_inventory(org["name"], org["sso_region"])
+    except errors.PortalError:
+        renew_access_token(org)
+        return portal_inventory(org["name"], org["sso_region"])

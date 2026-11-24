@@ -132,7 +132,7 @@ def test_discover_without_token(env, capsys):
                       'sso_region = "us-east-1"\n[[org.accounts]]\nname = "x"\nid = "111111111111"\n'
                       'roles = ["Administrator"]\n')
     assert cli.main(["discover", "acme"]) == 1
-    assert "rolehop login acme" in capsys.readouterr().err
+    assert "rolehop login --force acme" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("reply, default, expected", [

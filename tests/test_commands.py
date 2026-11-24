@@ -637,3 +637,51 @@ def test_ascii_terminal_does_not_crash(sample, tmp_path):
     out = subprocess.run([sys.executable, "-m", "rolehop", "status"], capture_output=True, text=True, env=env,
                          encoding="ascii", errors="replace")
     assert out.returncode == 1 and "Traceback" not in out.stderr and "rolehop sync" in out.stdout
+
+
+# --------------------------------------------------------------------------- expired access-portal token
+def test_role_cache_file_matches_botocore_key(sample):
+    """botocore (aws-cli v2) keys SSO role credentials by sha1 of compact sorted JSON with sessionName."""
+    import hashlib
+    org = config.load_orgs()[0]
+    expected = hashlib.sha1(b'{"accountId":"111111111111","roleName":"Administrator","sessionName":"acme"}').hexdigest()
+    assert portal_api.role_cache_file(org, "111111111111", "Administrator").name == f"{expected}.json"
+
+
+def test_refresh_renews_an_expired_token_through_the_cli(portal, monkeypatch, capsys):  # noqa: F811
+    """Token expired but the session is alive: drop the probe role's cached credentials so the AWS CLI renews it."""
+    import hashlib
+    cli_, p = portal
+    p.orgs.write_text(SAMPLE)
+    assert cli_.main(["sync", "--quiet"]) == 0
+    token = p.cache / f"{hashlib.sha1(b'acme').hexdigest()}.json"
+    token.write_text(json.dumps({"accessToken": "FAKE-TOKEN", "expiresAt": "2000-01-01T00:00:00Z"}))
+    cli_cache = p.tmp / "cli-cache"
+    cli_cache.mkdir()
+    monkeypatch.setattr(paths, "CLI_CACHE", cli_cache)
+    org = config.load_orgs()[0]
+    cached = portal_api.role_cache_file(org, "111111111111", "Administrator")  # probe profile acme-devsecops-admin
+    cached.write_text("{}")
+
+    def fake_cli(o):  # what the AWS CLI does when it has to fetch new role credentials: renew and save the token
+        assert not cached.exists(), "the cached role credentials must be gone before probing"
+        exp = (dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        token.write_text(json.dumps({"accessToken": "FAKE-TOKEN", "expiresAt": exp}))
+        return {"ok": True}
+
+    monkeypatch.setattr(session, "check_org", fake_cli)
+    assert cli_.main(["refresh", "--dry-run"]) == 0
+    assert "+ " in capsys.readouterr().out  # the inventory was read after the renewal
+
+
+def test_refresh_suggests_forced_login_when_renewal_fails(portal, monkeypatch, capsys):  # noqa: F811
+    import hashlib
+    cli_, p = portal
+    p.orgs.write_text(SAMPLE)
+    assert cli_.main(["sync", "--quiet"]) == 0
+    (p.cache / f"{hashlib.sha1(b'acme').hexdigest()}.json").write_text(
+        json.dumps({"accessToken": "FAKE-TOKEN", "expiresAt": "2000-01-01T00:00:00Z"}))
+    monkeypatch.setattr(paths, "CLI_CACHE", p.tmp / "cli-cache")
+    monkeypatch.setattr(session, "check_org", lambda o: {"ok": True})  # STS still answers from cached credentials
+    assert cli_.main(["refresh"]) == 1
+    assert "→ run: rolehop login --force acme" in capsys.readouterr().err
