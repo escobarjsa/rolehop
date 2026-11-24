@@ -136,5 +136,6 @@ Before anything is written, every value is validated: names, URLs, regions, 12-d
 | `AWS_CONFIG_FILE` | Path to the AWS config file (default `~/.aws/config`). |
 | `XDG_STATE_HOME` | Base directory for state (default `~/.local/state`, state lives in `rolehop/`). |
 | `ROLEHOP_SSO_CACHE` | AWS CLI SSO cache directory (default `~/.aws/sso/cache`). |
+| `ROLEHOP_SETTINGS` | Path of `settings.toml` (default `~/.config/rolehop/settings.toml`). |
 
 The previous `AWSORG_*` names are still honoured. See [Migrating from awsorg](../reference/migrating-from-awsorg.md).

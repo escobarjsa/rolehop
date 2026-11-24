@@ -203,6 +203,13 @@ def cmd_language(args) -> int:
     return 0
 
 
+def portal_token_ok(org: dict) -> bool:
+    """Role credentials can stay cached after the access-portal token expires: let the AWS CLI renew it if it can."""
+    if portal.token_valid(org["name"]):
+        return True
+    return bool(portal.renew_access_token(org)["renewed"])
+
+
 def cmd_login(args) -> int:
     orgs = config.select(config.load_orgs(), args.orgs)
     rc = 0
@@ -212,10 +219,13 @@ def cmd_login(args) -> int:
     for org in orgs:
         if not args.force and not session.read_state(org["name"]).get("blocked"):
             r = session.check_org(org)
-            if r["ok"]:
+            if r["ok"] and portal_token_ok(org):
                 ui.echo("✓ " + _("{org}: already has a session ({left}). Use --force to renew it.",
                                  org=org["name"], left=session.fmt_left(r.get("estimated_left_min"))))
                 continue
+            if r["ok"]:
+                ui.echo("! " + _("{org}: the access-portal token expired and the AWS CLI could not renew it; "
+                                 "signing in again.", org=org["name"]))
         device = args.device or org["login_flow"] == "device"
         cmd = ["aws", "sso", "login", "--sso-session", org["name"]]
         if device:
@@ -287,9 +297,10 @@ def cmd_discover(args) -> int:
     try:
         inv = portal.inventory(org)
     except errors.PortalError as exc:
-        if isinstance(exc, portal.LoginNeeded):  # --force: plain `login` may still see cached role credentials
-            ui.echo("✗ " + ui.sentence(exc.reason), err=True)
-            ui.fix(_("run: {cmd}", cmd=f"rolehop login --force {org['name']}"), indent=2, err=True)
+        if isinstance(exc, portal.LoginNeeded):
+            ui.echo("✗ " + _("{org}: could not read the access portal ({reason}).", org=org["name"], reason=exc.reason),
+                    err=True)
+            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}"), indent=2, err=True)
         else:
             ui.echo("✗ " + ui.sentence(str(exc)), err=True)
             ui.fix(_("run: {cmd}", cmd="rolehop doctor"), indent=2, err=True)

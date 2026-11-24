@@ -113,7 +113,7 @@ def test_refresh_without_session_writes_nothing(live, capsys):
     before = p.orgs.read_text()
     assert cli.main(["refresh"]) == 1
     assert p.orgs.read_text() == before
-    assert "rolehop login --force acme" in capsys.readouterr().err
+    assert "rolehop login acme" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------------------- remove
@@ -268,7 +268,7 @@ def test_refresh_multiple_orgs_one_fails(live, capsys):
     """))
     assert cli.main(["refresh"]) == 1  # 'other' has no token: it fails, but 'acme' is applied
     assert "acme-devsecops-power" in profiles(p) and "other-main-admin" in profiles(p)
-    assert "rolehop login --force other" in capsys.readouterr().err
+    assert "rolehop login other" in capsys.readouterr().err
 
 
 def test_remove_ambiguous_name_and_prefixes(sample):

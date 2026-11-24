@@ -56,7 +56,7 @@ Exit code `2` on validation errors or conflicts; nothing is written in that case
 
 ## `rolehop login` / `awslogin`
 
-Runs `aws sso login` only for organizations that need it.
+Runs `aws sso login` only for organizations that need it. An organization counts as signed in only if its role credentials work and its access-portal token is valid or can be renewed by the AWS CLI.
 
 ```text
 rolehop login [--device] [--force] [ORG ...]

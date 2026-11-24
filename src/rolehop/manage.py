@@ -235,7 +235,9 @@ def cmd_refresh(args) -> int:
             reason = exc.reason if isinstance(exc, portal.LoginNeeded) else str(exc)
             ui.echo("✗ " + _("{org}: could not read the access portal ({reason}).", org=org["name"], reason=reason),
                     err=True)
-            ui.fix(_("run: {cmd}", cmd=f"rolehop login --force {org['name']}"), indent=2, err=True)
+            login_needed = isinstance(exc, portal.LoginNeeded)
+            ui.fix(_("run: {cmd}", cmd=f"rolehop login {org['name']}" if login_needed else "rolehop doctor"),
+                   indent=2, err=True)
             failed.append(org["name"])
             updated.append(org)
             continue
